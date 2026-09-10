@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const roomOptionsSchema = z.object({
+  gameType: z.enum(['uno', 'ludo', 'snake']).default('uno'),
   isPrivate: z.boolean().default(true),
   maxPlayers: z.number().int().min(2).max(10).default(2),
   botCount: z.number().int().min(0).max(9).default(0),
@@ -10,11 +11,11 @@ export const roomOptionsSchema = z.object({
   rules: z.object({ stacking: z.boolean().optional(), sevenZero: z.boolean().optional(), jumpIn: z.boolean().optional() }).default({})
 }).refine((options) => options.botCount <= options.maxPlayers - 1, { message: 'Leave at least one seat for the host.', path: ['botCount'] })
   .refine((options) => !options.autoStart || options.botCount > 0, { message: 'Quick start is only available for bot matches.', path: ['autoStart'] });
-export const guestSchema = z.object({ username: z.string().max(24).optional(), avatarPreset: z.string().max(32).optional() });
+export const guestSchema = z.object({ username: z.string().max(24).optional(), avatarPreset: z.string().max(32).optional(), sessionToken: z.string().max(128).optional() });
 export const signupSchema = z.object({ username: z.string().min(1).max(24), email: z.string().email().max(254), password: z.string().min(10).max(72), avatarUrl: z.string().url().max(500).refine((value) => { try { return new URL(value).protocol === 'https:'; } catch { return false; } }, 'Avatar URL must use HTTPS.').optional(), avatarPreset: z.string().max(32).optional() });
 export const loginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(72) });
 export const reportSchema = z.object({ category: z.enum(['bug', 'abuse', 'cheating', 'other']), details: z.string().min(1).max(2000), roomCode: z.string().regex(/^[A-Z2-9]{6}$/).optional() });
-export const codeSchema = z.string().trim().toUpperCase().regex(/^[A-Z2-9]{6}$/);
+export const codeSchema = z.string().trim().toUpperCase().regex(/^[A-Z2-9]{4,6}$/);
 
 export const updateProfileSchema = z.object({
   username: z.string().min(1).max(24),
@@ -53,6 +54,9 @@ export const socketSchemas = {
   play: z.object({ cardId: z.string().uuid(), chosenColor: z.enum(['red', 'yellow', 'green', 'blue']).optional(), swapWithPlayerId: z.string().uuid().optional(), callUno: z.boolean().optional() }),
   catchUno: z.object({ targetPlayerId: z.string().uuid() }),
   chat: z.object({ text: z.string().min(1).max(280) }),
-  react: z.object({ messageId: z.string().uuid(), emoji: z.string().max(4) })
+  react: z.object({ messageId: z.string().uuid(), emoji: z.string().max(4) }),
+  emote: z.object({ emote: z.string().max(16).optional(), phrase: z.string().max(64).optional(), sfx: z.string().max(32).optional() }),
+  webrtcSignal: z.object({ toUserId: z.string(), signal: z.any(), type: z.enum(['offer', 'answer', 'candidate']) })
 };
+
 

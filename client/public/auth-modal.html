@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In & OTP Verification — UNO Night</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #08131d;
+      --teal-bg: rgba(12, 38, 48, 0.78);
+      --teal-border: rgba(45, 212, 191, 0.28);
+      --teal-glow: rgba(45, 212, 191, 0.15);
+      --cyan-accent: #2dd4bf;
+      --cyan-bright: #38bdf8;
+      --coral-grad: linear-gradient(135deg, #ff5e62 0%, #ff9966 100%);
+      --coral-shadow: 0 8px 24px rgba(255, 94, 98, 0.45);
+      --text-main: #f0fdfa;
+      --text-muted: #99f6e4;
+      --text-dim: #5eead4;
+      --input-bg: rgba(5, 23, 31, 0.75);
+      --radius-lg: 24px;
+      --radius-md: 14px;
+      --radius-sm: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: radial-gradient(circle at 50% 20%, #0d3b48 0%, #06121a 70%, #030a10 100%);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      overflow-x: hidden;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(3, 14, 22, 0.82);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      padding: 1rem;
+    }
+
+    .glass-modal {
+      position: relative;
+      width: 100%;
+      max-width: 480px;
+      max-height: 92vh;
+      overflow-y: auto;
+      background: linear-gradient(145deg, rgba(14, 46, 58, 0.88) 0%, rgba(8, 26, 34, 0.96) 100%);
+      border: 1.5px solid var(--teal-border);
+      border-radius: var(--radius-lg);
+      padding: 2.2rem 2rem;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.75), 0 0 35px var(--teal-glow);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      animation: modalScaleIn 0.28s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
+    }
+
+    @keyframes modalScaleIn {
+      from { transform: scale(0.92) translateY(24px); opacity: 0; }
+      to { transform: scale(1) translateY(0); opacity: 1; }
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.6rem;
+      padding-bottom: 0.8rem;
+      border-bottom: 1px solid rgba(45, 212, 191, 0.15);
+    }
+
+    .modal-title {
+      font-family: 'Fredoka', sans-serif;
+      font-size: 1.55rem;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -0.01em;
+      text-shadow: 0 0 12px rgba(45, 212, 191, 0.3);
+    }
+
+    .btn-close {
+      background: rgba(45, 212, 191, 0.08);
+      border: 1px solid rgba(45, 212, 191, 0.2);
+      color: var(--cyan-accent);
+      border-radius: 50%;
+      width: 34px;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-close:hover {
+      background: #ff5e62;
+      border-color: #ff5e62;
+      color: #ffffff;
+      transform: rotate(90deg);
+    }
+
+    .btn-guest-cta {
+      width: 100%;
+      padding: 0.95rem 1.4rem;
+      background: var(--coral-grad);
+      border: none;
+      border-radius: var(--radius-md);
+      color: #ffffff;
+      font-family: 'Fredoka', sans-serif;
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.65rem;
+      box-shadow: var(--coral-shadow);
+      transition: all 0.22s ease;
+    }
+
+    .btn-guest-cta:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 32px rgba(255, 94, 98, 0.65), 0 0 20px rgba(255, 153, 102, 0.5);
+    }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      margin: 1.6rem 0;
+      color: rgba(153, 246, 228, 0.5);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: rgba(45, 212, 191, 0.18);
+    }
+
+    .divider span {
+      padding: 0 0.85rem;
+    }
+
+    .social-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.85rem;
+      margin-bottom: 1.6rem;
+    }
+
+    .btn-social {
+      padding: 0.75rem 1rem;
+      background: rgba(6, 26, 35, 0.8);
+      border: 1px solid rgba(45, 212, 191, 0.2);
+      border-radius: var(--radius-md);
+      color: var(--text-main);
+      font-size: 0.92rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+    }
+
+    .btn-social:hover {
+      background: rgba(45, 212, 191, 0.12);
+      border-color: var(--cyan-accent);
+      transform: translateY(-2px);
+    }
+
+    .tab-switcher {
+      display: flex;
+      background: rgba(4, 18, 25, 0.85);
+      border: 1px solid rgba(45, 212, 191, 0.18);
+      border-radius: var(--radius-md);
+      padding: 0.25rem;
+      margin-bottom: 1.4rem;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 0.65rem;
+      border: none;
+      background: transparent;
+      color: rgba(153, 246, 228, 0.65);
+      font-weight: 700;
+      font-size: 0.92rem;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn.active {
+      background: var(--cyan-accent);
+      color: #041823;
+      box-shadow: 0 4px 14px rgba(45, 212, 191, 0.35);
+    }
+
+    .form-group {
+      margin-bottom: 1.1rem;
+      text-align: left;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 0.8rem 1rem;
+      background: var(--input-bg);
+      border: 1.5px solid rgba(45, 212, 191, 0.22);
+      border-radius: var(--radius-md);
+      color: #ffffff;
+      font-size: 0.95rem;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .form-control:focus {
+      border-color: var(--cyan-accent);
+      box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.2);
+    }
+
+    .password-strength-wrap {
+      margin-top: 0.45rem;
+    }
+
+    .strength-bar-track {
+      height: 4px;
+      background: rgba(45, 212, 191, 0.15);
+      border-radius: 999px;
+      overflow: hidden;
+      display: flex;
+    }
+
+    .strength-bar-fill {
+      height: 100%;
+      width: 0%;
+      transition: width 0.25s ease, background-color 0.25s ease;
+      background-color: #ff5e62;
+    }
+
+    .strength-hint-text {
+      font-size: 0.75rem;
+      color: rgba(153, 246, 228, 0.7);
+      margin-top: 0.3rem;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .btn-submit {
+      width: 100%;
+      padding: 0.9rem;
+      margin-top: 0.6rem;
+      background: linear-gradient(135deg, #0d9488 0%, #0284c7 100%);
+      border: 1px solid rgba(45, 212, 191, 0.4);
+      border-radius: var(--radius-md);
+      color: #ffffff;
+      font-family: 'Fredoka', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(13, 148, 136, 0.35);
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .btn-submit:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 28px rgba(13, 148, 136, 0.5);
+    }
+
+    /* -------------------------------------------------------------------------- */
+    /* OTP VERIFICATION STEP UI STYLES                                            */
+    /* -------------------------------------------------------------------------- */
+    .otp-step-container {
+      display: none;
+      animation: fadeIn 0.25s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .otp-subtitle {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+      margin-bottom: 1.2rem;
+      text-align: center;
+    }
+
+    .otp-subtitle strong {
+      color: var(--cyan-accent);
+    }
+
+    .dev-otp-banner {
+      background: rgba(251, 191, 36, 0.12);
+      border: 1px dashed rgba(251, 191, 36, 0.4);
+      border-radius: var(--radius-md);
+      padding: 0.75rem 1rem;
+      font-size: 0.84rem;
+      color: #fde047;
+      text-align: center;
+      margin-bottom: 1.2rem;
+    }
+
+    .otp-inputs-grid {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+      margin: 1.4rem 0;
+    }
+
+    .otp-box {
+      width: 46px;
+      height: 54px;
+      background: var(--input-bg);
+      border: 1.5px solid rgba(45, 212, 191, 0.3);
+      border-radius: var(--radius-sm);
+      text-align: center;
+      font-family: 'Fredoka', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #ffffff;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .otp-box:focus {
+      border-color: var(--cyan-accent);
+      box-shadow: 0 0 12px rgba(45, 212, 191, 0.4);
+    }
+
+    .otp-resend-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      color: rgba(153, 246, 228, 0.7);
+      margin-top: 1rem;
+    }
+
+    .btn-link-resend {
+      background: none;
+      border: none;
+      color: var(--cyan-accent);
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    .btn-link-resend:disabled {
+      color: rgba(153, 246, 228, 0.4);
+      cursor: not-allowed;
+      text-decoration: none;
+    }
+
+    .alert-box {
+      display: none;
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-md);
+      font-size: 0.85rem;
+      margin-bottom: 1.2rem;
+    }
+
+    .alert-box.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #fca5a5;
+    }
+
+    .alert-box.success {
+      display: block;
+      background: rgba(20, 184, 166, 0.15);
+      border: 1px solid rgba(20, 184, 166, 0.35);
+      color: #99f6e4;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="glass-modal">
+      
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalTitle">Sign In or Register Account</h2>
+        <button class="btn-close" id="btnClose">×</button>
+      </div>
+
+      <div class="alert-box" id="alertBox"></div>
+
+      <!-- MAIN AUTH FORM VIEW -->
+      <div id="authMainView">
+        <button class="btn-guest-cta" id="btnGuest" type="button">
+          <span>⚡</span>
+          <span>Play Instantly as Guest</span>
+        </button>
+
+        <div class="divider">
+          <span>OR SIGN IN WITH ACCOUNT</span>
+        </div>
+
+        <div class="social-row">
+          <a href="/api/auth/google" class="btn-social">
+            <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.15C3.26 21.3 7.31 24 12 24z"/><path fill="#FBBC05" d="M5.28 14.24c-.25-.72-.38-1.49-.38-2.24s.13-1.52.38-2.24V6.61H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.39l3.99-3.15z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.61l3.99 3.15c.95-2.85 3.6-4.96 6.72-4.96z"/></svg>
+            <span>Google</span>
+          </a>
+          <a href="/api/auth/discord" class="btn-social">
+            <svg viewBox="0 0 24 24" fill="#5865F2"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994.021-.041.001-.09-.041-.106a13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
+            <span>Discord</span>
+          </a>
+        </div>
+
+        <div class="tab-switcher">
+          <button class="tab-btn active" id="tabSignup" type="button">Sign Up</button>
+          <button class="tab-btn" id="tabSignin" type="button">Sign In</button>
+        </div>
+
+        <form id="authForm">
+          <div id="signUpFields">
+            <div class="form-group">
+              <label class="form-label" for="inputUsername">Username *</label>
+              <input class="form-control" id="inputUsername" type="text" placeholder="e.g. CardShark99">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="inputAvatar">Avatar URL <small>(Optional)</small></label>
+              <input class="form-control" id="inputAvatar" type="url" placeholder="https://example.com/avatar.png">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" id="labelEmail" for="inputEmail">Email Address *</label>
+            <input class="form-control" id="inputEmail" type="text" placeholder="you@example.com" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="inputPassword">Password *</label>
+            <input class="form-control" id="inputPassword" type="password" placeholder="Min. 10 characters" required>
+
+            <div class="password-strength-wrap" id="strengthWrap">
+              <div class="strength-bar-track">
+                <div class="strength-bar-fill" id="strengthBar"></div>
+              </div>
+              <div class="strength-hint-text">
+                <span id="strengthLabel">Min length: 10 chars</span>
+                <span id="lengthCounter">0/10</span>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn-submit" id="btnSubmit" type="submit">
+            <span id="btnSubmitText">Send OTP & Register</span>
+          </button>
+        </form>
+      </div>
+
+      <!-- OTP VERIFICATION STEP VIEW -->
+      <div class="otp-step-container" id="otpStepContainer">
+        <p class="otp-subtitle">We've sent a 6-digit verification code to <strong id="targetEmailText">user@example.com</strong></p>
+
+        <div class="dev-otp-banner" id="devOtpBanner" style="display: none;">
+          ⚡ <strong>Your Verification Code:</strong> <span id="devOtpCode" style="font-family: 'Fredoka', sans-serif; font-size: 1.25rem; letter-spacing: 3px; color: #ff5e62; margin-left: 6px; font-weight: bold;">123456</span>
+        </div>
+
+        <form id="otpForm">
+          <div class="otp-inputs-grid">
+            <input type="text" maxlength="1" class="otp-box" id="otp1" autofocus autocomplete="off">
+            <input type="text" maxlength="1" class="otp-box" id="otp2" autocomplete="off">
+            <input type="text" maxlength="1" class="otp-box" id="otp3" autocomplete="off">
+            <input type="text" maxlength="1" class="otp-box" id="otp4" autocomplete="off">
+            <input type="text" maxlength="1" class="otp-box" id="otp5" autocomplete="off">
+            <input type="text" maxlength="1" class="otp-box" id="otp6" autocomplete="off">
+          </div>
+
+          <button class="btn-submit" id="btnVerifyOtp" type="submit">
+            <span>Verify & Complete Registration</span>
+          </button>
+        </form>
+
+        <div class="otp-resend-row">
+          <span id="timerText">Resend code in 60s</span>
+          <button class="btn-link-resend" id="btnResendOtp" disabled type="button">Resend Code</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    let currentTab = 'signup';
+    let pendingData = null;
+    let timerInterval = null;
+    let secondsLeft = 60;
+
+    const tabSignup = document.getElementById('tabSignup');
+    const tabSignin = document.getElementById('tabSignin');
+    const signUpFields = document.getElementById('signUpFields');
+    const strengthWrap = document.getElementById('strengthWrap');
+    const labelEmail = document.getElementById('labelEmail');
+    const inputEmail = document.getElementById('inputEmail');
+    const inputPassword = document.getElementById('inputPassword');
+    const inputUsername = document.getElementById('inputUsername');
+    const inputAvatar = document.getElementById('inputAvatar');
+    const btnSubmitText = document.getElementById('btnSubmitText');
+    const authMainView = document.getElementById('authMainView');
+    const otpStepContainer = document.getElementById('otpStepContainer');
+    const alertBox = document.getElementById('alertBox');
+
+    function setTab(tab) {
+      currentTab = tab;
+      alertBox.className = 'alert-box';
+      alertBox.textContent = '';
+
+      if (tab === 'signup') {
+        tabSignup.classList.add('active');
+        tabSignin.classList.remove('active');
+        signUpFields.style.display = 'block';
+        strengthWrap.style.display = 'block';
+        labelEmail.textContent = 'Email Address *';
+        btnSubmitText.textContent = 'Send OTP & Register';
+      } else {
+        tabSignin.classList.add('active');
+        tabSignup.classList.remove('active');
+        signUpFields.style.display = 'none';
+        strengthWrap.style.display = 'none';
+        labelEmail.textContent = 'Email or Username *';
+        btnSubmitText.textContent = 'Sign in';
+      }
+    }
+
+    tabSignup.addEventListener('click', () => setTab('signup'));
+    tabSignin.addEventListener('click', () => setTab('signin'));
+
+    // Setup 6 OTP boxes auto-tabbing
+    const otpBoxes = [1,2,3,4,5,6].map(i => document.getElementById(`otp${i}`));
+    otpBoxes.forEach((box, idx) => {
+      box.addEventListener('input', (e) => {
+        if (e.target.value && idx < 5) otpBoxes[idx + 1].focus();
+      });
+      box.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !e.target.value && idx > 0) otpBoxes[idx - 1].focus();
+      });
+    });
+
+    function startResendTimer() {
+      clearInterval(timerInterval);
+      secondsLeft = 60;
+      const btnResend = document.getElementById('btnResendOtp');
+      const timerText = document.getElementById('timerText');
+      btnResend.disabled = true;
+
+      timerInterval = setInterval(() => {
+        secondsLeft--;
+        timerText.textContent = `Resend code in ${secondsLeft}s`;
+        if (secondsLeft <= 0) {
+          clearInterval(timerInterval);
+          timerText.textContent = '';
+          btnResend.disabled = false;
+        }
+      }, 1000);
+    }
+
+    // Form Submission
+    document.getElementById('authForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      alertBox.className = 'alert-box';
+      alertBox.textContent = '';
+
+      const emailVal = inputEmail.value.trim();
+      const passVal = inputPassword.value;
+
+      if (currentTab === 'signin') {
+        // Direct Login
+        try {
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ login: emailVal, password: passVal })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Invalid credentials.');
+          alertBox.className = 'alert-box success';
+          alertBox.textContent = `Welcome back ${data.user.username}! Redirecting...`;
+          setTimeout(() => window.location.href = '/lobby', 800);
+        } catch (err) {
+          alertBox.className = 'alert-box error';
+          alertBox.textContent = err.message;
+        }
+        return;
+      }
+
+      // Registration Flow -> Send OTP First
+      pendingData = {
+        username: inputUsername.value.trim(),
+        email: emailVal,
+        password: passVal,
+        avatarUrl: inputAvatar.value.trim()
+      };
+
+      try {
+        const res = await fetch('/api/auth/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ email: emailVal, purpose: 'registration' })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not send verification code.');
+
+        // Transition to OTP Verification Step
+        document.getElementById('modalTitle').textContent = 'Verify Email Address';
+        document.getElementById('targetEmailText').textContent = emailVal;
+
+        if (data.devOtp) {
+          document.getElementById('devOtpBanner').style.display = 'block';
+          document.getElementById('devOtpCode').textContent = data.devOtp;
+        }
+
+        if (data.emailPreviewUrl) {
+          const previewWrap = document.getElementById('emailPreviewLinkWrap');
+          const previewLink = document.getElementById('emailPreviewLink');
+          if (previewWrap && previewLink) {
+            previewWrap.style.display = 'block';
+            previewLink.href = data.emailPreviewUrl;
+          }
+        }
+
+        authMainView.style.display = 'none';
+        otpStepContainer.style.display = 'block';
+        startResendTimer();
+        otpBoxes[0].focus();
+      } catch (err) {
+        alertBox.className = 'alert-box error';
+        alertBox.textContent = err.message;
+      }
+    });
+
+    // Verify OTP Submission
+    document.getElementById('otpForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      alertBox.className = 'alert-box';
+      alertBox.textContent = '';
+
+      const code = otpBoxes.map(b => b.value.trim()).join('');
+      if (code.length < 6) {
+        alertBox.className = 'alert-box error';
+        alertBox.textContent = 'Please enter all 6 digits of the code.';
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/auth/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            email: pendingData.email,
+            otpCode: code,
+            username: pendingData.username,
+            password: pendingData.password,
+            avatarUrl: pendingData.avatarUrl,
+            purpose: 'registration'
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Verification failed.');
+
+        alertBox.className = 'alert-box success';
+        alertBox.textContent = 'Email verified & account created! Redirecting...';
+        setTimeout(() => window.location.href = '/lobby', 800);
+      } catch (err) {
+        alertBox.className = 'alert-box error';
+        alertBox.textContent = err.message;
+      }
+    });
+
+    // Close Modal Button
+    document.getElementById('btnClose').addEventListener('click', () => {
+      document.getElementById('modalOverlay').style.display = 'none';
+    });
+  </script>
+</body>
+</html>

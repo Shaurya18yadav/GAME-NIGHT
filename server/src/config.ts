@@ -15,7 +15,7 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL,
   databaseSsl: process.env.DATABASE_SSL === 'true',
   avatarStoragePath: process.env.AVATAR_STORAGE_PATH ?? 'uploads/avatars',
-  turnSeconds: Math.max(10, Math.min(120, Number(process.env.TURN_SECONDS ?? 30))),
+  turnSeconds: Math.max(10, Math.min(120, Number(process.env.TURN_SECONDS ?? 15))),
   production: process.env.NODE_ENV === 'production'
 };
 

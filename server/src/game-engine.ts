@@ -44,7 +44,18 @@ export class UnoGame {
     if (this.state.status !== 'waiting') throw new GameRuleError('The match is already in progress.');
     if (this.state.players.length >= 10) throw new GameRuleError('This room is full.');
     if (this.state.players.some((existing) => existing.id === player.id)) return;
-    this.state.players.push({ ...player, hand: [], ready: false, connected: true, score: 0, unoCalled: false });
+    const isFirst = this.state.players.length === 0;
+    const joinedAt = player.joinedAt ?? Date.now();
+    this.state.players.push({
+      ...player,
+      hand: [],
+      ready: false,
+      connected: true,
+      score: 0,
+      unoCalled: false,
+      joinedAt,
+      isHost: player.isHost ?? isFirst
+    });
   }
 
   removeWaitingPlayer(playerId: string): void {
@@ -54,7 +65,7 @@ export class UnoGame {
 
   startMatch(): void {
     if (this.state.status !== 'waiting') throw new GameRuleError('The match has already started.');
-    if (this.state.players.length < 2) throw new GameRuleError('At least two players are required.');
+    if (this.state.players.length < 2 && this.state.gameType !== 'snake') throw new GameRuleError('At least two players are required.');
     if (!this.state.players.every((player) => player.ready)) throw new GameRuleError('Every player must be ready.');
     for (const player of this.state.players) player.score = 0;
     this.state.matchMetrics = new Map(this.state.players.map((player) => [player.id, { unoCalls: 0, caughtWithoutUno: 0 }]));
@@ -219,23 +230,63 @@ export class UnoGame {
     return cards;
   }
 
-  autoPlayTurn(): void {
+  autoPlayTurn(forceTimeoutFallback = false): void {
     if (this.state.status !== 'playing') return;
     const player = this.currentPlayer();
-    if (this.state.pendingDraw) { this.acceptPenalty(player.id); return; }
+    if (!player) return;
+
+    // Grace Period State Machine: If player is disconnected and not a bot,
+    // force a draw/penalty and safely advance turn.
+    if (!player.connected && !player.isBot) {
+      if (this.state.pendingDraw) {
+        this.acceptPenalty(player.id);
+      } else {
+        this.draw(player.id);
+        this.advance();
+      }
+      return;
+    }
+
+    if (this.state.pendingDraw) {
+      this.acceptPenalty(player.id);
+      return;
+    }
+
+    // Turn Timer Fallback: In Uno, force a card draw and yield to the next player
+    if (forceTimeoutFallback || !player.isBot) {
+      this.draw(player.id);
+      this.advance();
+      return;
+    }
+
+    // Active AI Bot move logic
     const legal = player.hand.find((card) => this.isLegalCard(player, card));
     if (!legal) {
       const [drawn] = this.draw(player.id);
       if (this.isLegalCard(player, drawn)) {
-        this.play({ playerId: player.id, cardId: drawn.id, chosenColor: drawn.color ? undefined : this.bestWildColor(player), swapWithPlayerId: drawn.value === '7' && this.state.rules.sevenZero ? this.state.players.find((candidate) => candidate.id !== player.id)?.id : undefined, callUno: player.hand.length === 2 });
-      } else this.pass(player.id);
+        this.play({
+          playerId: player.id,
+          cardId: drawn.id,
+          chosenColor: drawn.color ? undefined : this.bestWildColor(player),
+          swapWithPlayerId: drawn.value === '7' && this.state.rules.sevenZero ? this.state.players.find((candidate) => candidate.id !== player.id)?.id : undefined,
+          callUno: player.hand.length === 2
+        });
+      } else {
+        this.pass(player.id);
+      }
       return;
     }
     const color = legal.color ? undefined : this.bestWildColor(player);
     const swapTarget = legal.value === '7' && this.state.rules.sevenZero
       ? this.state.players.find((candidate) => candidate.id !== player.id)?.id
       : undefined;
-    this.play({ playerId: player.id, cardId: legal.id, chosenColor: color, swapWithPlayerId: swapTarget, callUno: player.hand.length === 2 });
+    this.play({
+      playerId: player.id,
+      cardId: legal.id,
+      chosenColor: color,
+      swapWithPlayerId: swapTarget,
+      callUno: player.hand.length === 2
+    });
   }
 
   private applyCardEffect(card: Card, sourcePlayerId: string, sourceHadMatchingColor: boolean, stackedAmount = 0): void {
@@ -355,11 +406,14 @@ export class UnoGame {
     const top = this.topCard();
     return {
       roomId: this.state.roomId,
+      gameType: this.state.gameType ?? 'uno',
       status: this.state.status,
       players: this.state.players.map((player) => ({
         id: player.id, username: player.username, avatarUrl: player.avatarUrl, ready: player.ready,
-        connected: player.connected, isBot: Boolean(player.isBot), score: player.score, handCount: player.hand.length,
-        unoCalled: player.unoCalled, isYou: player.id === viewerId
+        connected: player.connected, isBot: Boolean(player.isBot), isHost: Boolean(player.isHost),
+        joinedAt: player.joinedAt, score: player.score, handCount: player.hand.length,
+        unoCalled: player.unoCalled, isYou: player.id === viewerId, ludoColor: player.ludoColor,
+        disconnectDeadline: player.disconnectDeadline
       })),
       spectatorCount: this.state.spectators.size,
       topCard: top ? { id: top.id, color: top.color, value: top.value } : undefined,
@@ -378,7 +432,8 @@ export class UnoGame {
       chat: this.state.chat,
       hand: viewer?.hand ?? [],
       drewCardId: viewer?.drewCardId,
-      isSpectator: Boolean(viewerId && !viewer)
+      isSpectator: Boolean(viewerId && !viewer),
+      ludoState: this.state.ludoState
     };
   }
 }

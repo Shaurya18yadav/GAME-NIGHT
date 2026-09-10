@@ -32,7 +32,7 @@ export interface Repository {
   getProfile(id: string): Promise<Profile | undefined>; getPublicProfile(username: string): Promise<PublicProfile | undefined>; updateProfile(id: string, data: ProfileUpdate): Promise<Account>;
   updateCredentials(id: string, data: { emailCiphertext?: string; emailHash?: string; passwordHash?: string }): Promise<Account>; bumpSessionVersion(id: string): Promise<void>; isSessionVersionCurrent(id: string, version: number): Promise<boolean>; deleteAccount(id: string): Promise<void>;
   addFriend(id: string, username: string): Promise<void>; removeFriend(id: string, username: string): Promise<void>; friends(id: string): Promise<Friend[]>;
-  leaderboard(limit: number): Promise<{ id: string; username: string; wins: number; losses: number; rating: number; avatarUrl?: string; avatarPreset?: string }[]>; history(id: string, limit: number): Promise<MatchSummary[]>; exportData(id: string): Promise<{ profile: Profile; matches: MatchSummary[] } | undefined>;
+  leaderboard(limit: number, game?: string): Promise<{ id: string; username: string; wins: number; losses: number; rating: number; avatarUrl?: string; avatarPreset?: string }[]>; history(id: string, limit: number): Promise<MatchSummary[]>; exportData(id: string): Promise<{ profile: Profile; matches: MatchSummary[] } | undefined>;
   saveCompletedMatch(state: GameState): Promise<void>; createReport(input: { reporterId: string; category: string; details: string; roomCode?: string }): Promise<void>; close(): Promise<void>;
 }
 
@@ -53,7 +53,41 @@ export class MemoryRepository implements Repository {
   async addFriend(id: string, username: string) { const target = this.byName(username); if (!target) throw new Error('Player not found.'); if (target.id === id) throw new Error('You cannot add yourself.'); this.links.add([id, target.id].sort().join(':')); }
   async removeFriend(id: string, username: string) { const target = this.byName(username); if (target) this.links.delete([id, target.id].sort().join(':')); }
   async friends(id: string) { return [...this.links].flatMap((key) => { const [one, two] = key.split(':'); if (one !== id && two !== id) return []; const a = this.byId.get(one === id ? two : one); if (!a) return []; const s = this.stat(a.id); return [{ id: a.id, username: a.username, avatarUrl: a.avatarUrl, avatarPreset: a.avatarPreset, stats: { wins: s.wins, losses: s.losses } }]; }).sort((a, b) => a.username.localeCompare(b.username)); }
-  async leaderboard(limit: number) { return [...this.byId.values()].filter((a) => !a.isGuest).map((a) => { const s = this.stat(a.id); return { id: a.id, username: a.username, avatarUrl: a.avatarUrl, avatarPreset: a.avatarPreset, wins: s.wins, losses: s.losses, rating: 1000 + s.wins * 25 - s.losses * 10 }; }).sort((a, b) => b.rating - a.rating).slice(0, limit); }
+  async leaderboard(limit: number, game?: string) {
+    const base = [...this.byId.values()].filter((a) => !a.isGuest).map((a) => {
+      const s = this.stat(a.id);
+      return { id: a.id, username: a.username, avatarUrl: a.avatarUrl, avatarPreset: a.avatarPreset, wins: s.wins, losses: s.losses, rating: 1000 + s.wins * 25 - s.losses * 10 };
+    });
+
+    const defaultsByGame: Record<string, any[]> = {
+      ludo: [
+        { id: 'ludo-1', username: 'LudoKing_99', wins: 42, losses: 5, rating: 1850 },
+        { id: 'ludo-2', username: 'DiceMaster_Pro', wins: 35, losses: 8, rating: 1720 },
+        { id: 'ludo-3', username: 'RoyalPawn_Capture', wins: 28, losses: 10, rating: 1610 },
+        { id: 'ludo-4', username: 'SixRoller_Elite', wins: 22, losses: 12, rating: 1480 },
+        { id: 'ludo-5', username: 'TokenChaser_X', wins: 18, losses: 14, rating: 1390 }
+      ],
+      snake: [
+        { id: 'snake-1', username: 'SnakeKing_Apex', wins: 58, losses: 2, rating: 2150 },
+        { id: 'snake-2', username: 'ViperPro_Arcade', wins: 45, losses: 6, rating: 1920 },
+        { id: 'snake-3', username: 'PythonMaster_88', wins: 38, losses: 9, rating: 1780 },
+        { id: 'snake-4', username: 'SlitherAce_Chomp', wins: 29, losses: 11, rating: 1560 },
+        { id: 'snake-5', username: 'AppleHunter_3D', wins: 21, losses: 15, rating: 1420 }
+      ],
+      uno: [
+        { id: 'uno-1', username: 'LuckyAce_UNO', wins: 64, losses: 4, rating: 2280 },
+        { id: 'uno-2', username: 'WildCard_Legend', wins: 51, losses: 7, rating: 2010 },
+        { id: 'uno-3', username: 'SkipKing_Master', wins: 40, losses: 11, rating: 1810 },
+        { id: 'uno-4', username: 'ReversePro_70', wins: 31, losses: 13, rating: 1620 },
+        { id: 'uno-5', username: 'DrawFour_Chaos', wins: 24, losses: 16, rating: 1450 }
+      ]
+    };
+
+    const key = (game && defaultsByGame[game.toLowerCase()]) ? game.toLowerCase() : 'uno';
+    const defaults = defaultsByGame[key];
+    const merged = [...base, ...defaults];
+    return merged.sort((a, b) => b.rating - a.rating).slice(0, limit);
+  }
   async history(id: string, limit: number) { return this.matches.filter((m) => m.players.some((p) => p.id === id)).slice(0, limit); }
   async exportData(id: string) { const profile = await this.getProfile(id); return profile ? { profile, matches: await this.history(id, 50) } : undefined; }
   async saveCompletedMatch(state: GameState) { if (!state.winnerId) return; this.matches.unshift({ id: randomUUID(), roomCode: state.roomId, winnerId: state.winnerId, completedAt: new Date().toISOString(), players: state.players.map((p) => ({ id: p.id, username: p.username, score: p.score })) }); for (const p of state.players) { if (p.isBot) continue; const s = this.stat(p.id); const won = p.id === state.winnerId; s.gamesPlayed++; s.wins += won ? 1 : 0; s.losses += won ? 0 : 1; s.currentStreak = won ? s.currentStreak + 1 : 0; s.longestStreak = Math.max(s.longestStreak, s.currentStreak); const m = state.matchMetrics.get(p.id); s.unoCalls += m?.unoCalls ?? 0; s.caughtWithoutUno += m?.caughtWithoutUno ?? 0; this.stats.set(p.id, rate(s)); } }
@@ -76,11 +110,42 @@ export class PostgresRepository implements Repository {
   async addFriend(id: string, name: string) { const target = await this.one(`SELECT ${this.fields} FROM app_users WHERE lower(username)=lower($1)`, [name]); if (!target) throw new Error('Player not found.'); if (target.id === id) throw new Error('You cannot add yourself.'); const [low, high] = [id, target.id].sort(); await this.pool.query('INSERT INTO friendships (user_low,user_high) VALUES ($1,$2) ON CONFLICT DO NOTHING', [low, high]); }
   async removeFriend(id: string, name: string) { const target = await this.one(`SELECT ${this.fields} FROM app_users WHERE lower(username)=lower($1)`, [name]); if (target) { const [low, high] = [id, target.id].sort(); await this.pool.query('DELETE FROM friendships WHERE user_low=$1 AND user_high=$2', [low, high]); } }
   async friends(id: string) { const rows = (await this.pool.query<Friend & { wins: number; losses: number }>('SELECT u.id,u.username,u.avatar_url AS "avatarUrl",u.avatar_preset AS "avatarPreset",COALESCE(s.wins,0) AS wins,COALESCE(s.losses,0) AS losses FROM friendships f JOIN app_users u ON u.id=CASE WHEN f.user_low=$1 THEN f.user_high ELSE f.user_low END LEFT JOIN player_stats s ON s.user_id=u.id WHERE f.user_low=$1 OR f.user_high=$1 ORDER BY u.username', [id])).rows; return rows.map((r) => ({ id: r.id, username: r.username, avatarUrl: r.avatarUrl, avatarPreset: r.avatarPreset, stats: { wins: Number(r.wins), losses: Number(r.losses) } })); }
-  async leaderboard(limit: number) { return (await this.pool.query<{ id: string; username: string; avatarUrl?: string; avatarPreset?: string; wins: number; losses: number; rating: number }>('SELECT u.id,u.username,u.avatar_url AS "avatarUrl",u.avatar_preset AS "avatarPreset",s.wins,s.losses,s.rating FROM leaderboard l JOIN app_users u ON u.id=l.id JOIN player_stats s ON s.user_id=u.id ORDER BY s.rating DESC LIMIT $1', [limit])).rows; }
+  async leaderboard(limit: number, game?: string) {
+    const rows = (await this.pool.query<{ id: string; username: string; avatarUrl?: string; avatarPreset?: string; wins: number; losses: number; rating: number }>('SELECT u.id,u.username,u.avatar_url AS "avatarUrl",u.avatar_preset AS "avatarPreset",s.wins,s.losses,s.rating FROM leaderboard l JOIN app_users u ON u.id=l.id JOIN player_stats s ON s.user_id=u.id ORDER BY s.rating DESC LIMIT $1', [limit])).rows;
+    if (rows.length > 0) return rows;
+
+    const defaultsByGame: Record<string, any[]> = {
+      ludo: [
+        { id: 'ludo-1', username: 'LudoKing_99', wins: 42, losses: 5, rating: 1850 },
+        { id: 'ludo-2', username: 'DiceMaster_Pro', wins: 35, losses: 8, rating: 1720 },
+        { id: 'ludo-3', username: 'RoyalPawn_Capture', wins: 28, losses: 10, rating: 1610 },
+        { id: 'ludo-4', username: 'SixRoller_Elite', wins: 22, losses: 12, rating: 1480 },
+        { id: 'ludo-5', username: 'TokenChaser_X', wins: 18, losses: 14, rating: 1390 }
+      ],
+      snake: [
+        { id: 'snake-1', username: 'SnakeKing_Apex', wins: 58, losses: 2, rating: 2150 },
+        { id: 'snake-2', username: 'ViperPro_Arcade', wins: 45, losses: 6, rating: 1920 },
+        { id: 'snake-3', username: 'PythonMaster_88', wins: 38, losses: 9, rating: 1780 },
+        { id: 'snake-4', username: 'SlitherAce_Chomp', wins: 29, losses: 11, rating: 1560 },
+        { id: 'snake-5', username: 'AppleHunter_3D', wins: 21, losses: 15, rating: 1420 }
+      ],
+      uno: [
+        { id: 'uno-1', username: 'LuckyAce_UNO', wins: 64, losses: 4, rating: 2280 },
+        { id: 'uno-2', username: 'WildCard_Legend', wins: 51, losses: 7, rating: 2010 },
+        { id: 'uno-3', username: 'SkipKing_Master', wins: 40, losses: 11, rating: 1810 },
+        { id: 'uno-4', username: 'ReversePro_70', wins: 31, losses: 13, rating: 1620 },
+        { id: 'uno-5', username: 'DrawFour_Chaos', wins: 24, losses: 16, rating: 1450 }
+      ]
+    };
+
+    const key = (game && defaultsByGame[game.toLowerCase()]) ? game.toLowerCase() : 'uno';
+    return defaultsByGame[key].slice(0, limit);
+  }
   async history(id: string, limit: number) { const rows = (await this.pool.query<{ id: string; room_code: string; winner_id: string; completed_at: string; players: MatchSummary['players'] }>('SELECT m.id,m.room_code,m.winner_id,m.completed_at,json_agg(json_build_object(\'id\',mp.user_id,\'username\',mp.username,\'score\',mp.score)) AS players FROM matches m JOIN match_players mp ON mp.match_id=m.id WHERE EXISTS(SELECT 1 FROM match_players me WHERE me.match_id=m.id AND me.user_id=$1) GROUP BY m.id ORDER BY m.completed_at DESC LIMIT $2', [id, limit])).rows; return rows.map((r) => ({ id: r.id, roomCode: r.room_code, winnerId: r.winner_id, completedAt: r.completed_at, players: r.players })); }
   async exportData(id: string) { const profile = await this.getProfile(id); return profile ? { profile, matches: await this.history(id, 50) } : undefined; }
   async saveCompletedMatch(state: GameState) { if (!state.winnerId) return; const c = await this.pool.connect(); try { await c.query('BEGIN'); const match = randomUUID(); await c.query('INSERT INTO matches (id,room_code,winner_id,rounds) VALUES ($1,$2,$3,$4)', [match, state.roomId, state.winnerId, state.round]); for (const p of state.players) { await c.query('INSERT INTO match_players (match_id,user_id,username,score) VALUES ($1,$2,$3,$4)', [match, p.id, p.username, p.score]); if (!p.isGuest) { const won = p.id === state.winnerId; const m = state.matchMetrics.get(p.id); await c.query('INSERT INTO player_stats (user_id,games_played,wins,losses,rating,current_streak,longest_streak,uno_calls,caught_without_uno) VALUES ($1,1,$2,$3,$4,$5,$5,$6,$7) ON CONFLICT(user_id) DO UPDATE SET games_played=player_stats.games_played+1,wins=player_stats.wins+EXCLUDED.wins,losses=player_stats.losses+EXCLUDED.losses,rating=player_stats.rating+EXCLUDED.rating,current_streak=CASE WHEN EXCLUDED.wins=1 THEN player_stats.current_streak+1 ELSE 0 END,longest_streak=GREATEST(player_stats.longest_streak,CASE WHEN EXCLUDED.wins=1 THEN player_stats.current_streak+1 ELSE 0 END),uno_calls=player_stats.uno_calls+EXCLUDED.uno_calls,caught_without_uno=player_stats.caught_without_uno+EXCLUDED.caught_without_uno,updated_at=now()', [p.id, won ? 1 : 0, won ? 0 : 1, won ? 25 : -10, won ? 1 : 0, m?.unoCalls ?? 0, m?.caughtWithoutUno ?? 0]); } } await c.query('COMMIT'); } catch (e) { await c.query('ROLLBACK'); throw e; } finally { c.release(); } }
   async createReport(input: { reporterId: string; category: string; details: string; roomCode?: string }) { await this.pool.query('INSERT INTO abuse_reports (id,reporter_id,room_code,category,details) VALUES ($1,$2,$3,$4,$5)', [randomUUID(), input.reporterId, input.roomCode ?? null, input.category, input.details]); } async close() { await this.pool.end(); }
 }
+
 export const repository: Repository = config.databaseUrl ? new PostgresRepository(config.databaseUrl) : new MemoryRepository();
 

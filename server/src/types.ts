@@ -26,6 +26,10 @@ export interface Player {
   score: number;
   unoCalled: boolean;
   drewCardId?: string;
+  ludoColor?: 'red' | 'green' | 'yellow' | 'blue';
+  disconnectDeadline?: number;
+  joinedAt?: number;
+  isHost?: boolean;
 }
 
 export interface PendingDraw {
@@ -49,8 +53,27 @@ export interface MatchMetrics {
   caughtWithoutUno: number;
 }
 
+export interface LudoToken {
+  id: string;
+  color: Color;
+  pos: number;
+}
+
+export interface LudoState {
+  tokens: Record<Color, LudoToken[]>;
+  turnColor: Color;
+  dice: number;
+  phase: 'awaiting-roll' | 'awaiting-choice' | 'gameover';
+  movableTokens: { id: string; pos: number }[];
+  consecutiveSixes: number;
+  rankings: Color[];
+  winnerColor?: Color;
+  logs: { from: string; text: string; time: number }[];
+}
+
 export interface GameState {
   roomId: string;
+  gameType?: 'uno' | 'ludo' | 'snake';
   status: 'waiting' | 'playing' | 'round-over' | 'match-over';
   players: Player[];
   spectators: Map<string, { id: string; username: string; connected: boolean }>;
@@ -69,6 +92,7 @@ export interface GameState {
   chat: ChatMessage[];
   matchMetrics: Map<string, MatchMetrics>;
   turnDeadline?: number;
+  ludoState?: LudoState;
 }
 
 export interface SessionUser {

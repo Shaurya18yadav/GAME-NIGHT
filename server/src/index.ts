@@ -11,9 +11,16 @@ import { config } from './config.js';
 import { RoomManager } from './room-manager.js';
 import { repository } from './repository.js';
 import { avatarUploadLimit, loadAvatar, saveAvatar } from './avatar-storage.js';
-import { clearSession, encryptSensitive, hashEmail, newGuestUsername, randomPresetAvatar, requireSession, sanitizeText, sanitizeUsername, sessionFromRequest, setSession, verifySession } from './security.js';
+import { clearSession, encryptSensitive, hashEmail, newGuestUsername, randomPresetAvatar, requireSession, sanitizeText, sanitizeUsername, sessionFromRequest, setSession, signSession, verifySession } from './security.js';
 import { codeSchema, convertGuestSchema, friendSchema, guestSchema, loginSchema, reportSchema, roomOptionsSchema, signupSchema, socketSchemas, updateCredentialsSchema, updateProfileSchema } from './validation.js';
 import { GameRuleError } from './game-engine.js';
+
+import cookieParser from 'cookie-parser';
+import session from 'express-session';
+import passport from 'passport';
+import { configurePassport } from './passportConfig.js';
+import { authMiddleware } from './authHelper.js';
+import { authRouter } from './routes/authRoutes.js';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -28,22 +35,74 @@ app.use(helmet({
 }));
 app.use(cors({ origin: config.clientOrigin, credentials: true, methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'] }));
 app.use(express.json({ limit: '16kb', type: 'application/json' }));
+app.use(cookieParser());
 
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Too many attempts. Try again later.' } });
-const guestLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Too many guest sessions created. Try again later.' } });
-const roomLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Room creation limit reached. Try later.' } });
-const profileLimiter = rateLimit({ windowMs: 60 * 1000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Too many profile updates. Slow down.' } });
-const avatarLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Avatar upload limit reached. Try later.' } });
+// Express-session used ONLY internally to bridge the OAuth redirect handshake
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || 'internal_handshake_session_secret_123',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { sameSite: 'lax', httpOnly: true, secure: config.production }
+  })
+);
+
+// Initialize Passport.js for OAuth strategies
+configurePassport();
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Extract JWT auth token
+app.use(authMiddleware as express.RequestHandler);
+
+// Mount SQLite + Passport full-stack auth router under /api/auth
+app.use('/api/auth', authRouter);
+
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 50, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Too many attempts. Try again later.' } });
+const guestLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Too many guest sessions created. Try again later.' } });
+const roomLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 100, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Room creation limit reached. Try later.' } });
+const profileLimiter = rateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Too many profile updates. Slow down.' } });
+const avatarLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 30, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Avatar upload limit reached. Try later.' } });
 
 app.get('/api/health', (_request, response) => response.json({ ok: true }));
+
+import { dbFeedback } from './db.js';
+
+app.get('/api/feedbacks', (_req, res) => {
+  const feedbacks = dbFeedback.getAll();
+  return res.json({ feedbacks });
+});
+
+app.post('/api/feedbacks', profileLimiter, (req, res) => {
+  try {
+    const { rating, comment, authorName, authorRole } = req.body || {};
+    const numRating = Math.min(5, Math.max(1, parseInt(rating, 10) || 5));
+    if (!comment || typeof comment !== 'string' || comment.trim().length === 0) {
+      return res.status(400).json({ error: 'Comment is required.' });
+    }
+    const name = typeof authorName === 'string' && authorName.trim() ? authorName.trim() : 'Anonymous Cardholder';
+    const role = typeof authorRole === 'string' && authorRole.trim() ? authorRole.trim() : 'UNO Night Player';
+    const newFeedback = dbFeedback.addFeedback(randomUUID(), name, role, numRating, comment.trim());
+    return res.status(201).json({ feedback: newFeedback, feedbacks: dbFeedback.getAll() });
+  } catch (err) {
+    return res.status(500).json({ error: 'Could not submit feedback.' });
+  }
+});
 app.post('/api/auth/guest', guestLimiter, (request, response, next) => {
   try {
-    const body = guestSchema.parse(request.body);
+    const existing = sessionFromRequest(request);
+    if (existing) {
+      return response.json({ user: existing, token: signSession(existing) });
+    }
+    const body = guestSchema.parse(request.body ?? {});
+    const sessionToken = (request.headers['x-session-token'] as string | undefined) || body.sessionToken;
+    const userId = (sessionToken && /^[0-9a-fA-F-]{8,64}$/.test(sessionToken.trim())) ? sessionToken.trim() : randomUUID();
     const username = body.username ? sanitizeUsername(body.username) : newGuestUsername();
     const avatarPreset = body.avatarPreset || randomPresetAvatar();
-    const user = { id: randomUUID(), username, isGuest: true, avatarPreset };
+    const user = { id: userId, username, isGuest: true, avatarPreset };
     setSession(response, user);
-    response.status(201).json({ user });
+    const token = signSession(user);
+    response.status(201).json({ user, token });
   } catch (error) { next(error); }
 });
 app.post('/api/auth/signup', authLimiter, async (request, response, next) => {
@@ -52,7 +111,8 @@ app.post('/api/auth/signup', authLimiter, async (request, response, next) => {
     const user = { id: randomUUID(), username: sanitizeUsername(body.username), isGuest: false, avatarUrl: body.avatarUrl, avatarPreset: body.avatarPreset || randomPresetAvatar() };
     await repository.createAccount({ ...user, emailCiphertext: encryptSensitive(body.email.trim().toLowerCase()), emailHash: hashEmail(body.email), passwordHash: await bcrypt.hash(body.password, 12), createdAt: new Date().toISOString() });
     setSession(response, user);
-    response.status(201).json({ user });
+    const token = signSession(user);
+    response.status(201).json({ user, token });
   } catch (error) { next(error); }
 });
 app.post('/api/auth/login', authLimiter, async (request, response, next) => {
@@ -62,7 +122,8 @@ app.post('/api/auth/login', authLimiter, async (request, response, next) => {
     if (!account || !(await bcrypt.compare(body.password, account.passwordHash))) return response.status(401).json({ error: 'Invalid email or password.' });
     const user = { id: account.id, username: account.username, isGuest: false, avatarUrl: account.avatarUrl, avatarPreset: account.avatarPreset, sessionVersion: account.sessionVersion };
     setSession(response, user);
-    response.json({ user });
+    const token = signSession(user);
+    response.json({ user, token });
   } catch (error) { next(error); }
 });
 app.post('/api/auth/oauth-login', authLimiter, async (request, response, next) => {
@@ -78,7 +139,8 @@ app.post('/api/auth/oauth-login', authLimiter, async (request, response, next) =
       createdAt: new Date().toISOString()
     });
     setSession(response, user);
-    response.status(201).json({ user });
+    const token = signSession(user);
+    response.status(201).json({ user, token });
   } catch (error) { next(error); }
 });
 app.post('/api/auth/logout', (request, response) => { clearSession(response); response.status(204).end(); });
@@ -89,7 +151,7 @@ app.get('/api/auth/me', async (request, response) => {
     const isCurrent = await repository.isSessionVersionCurrent(user.id, user.sessionVersion);
     if (!isCurrent) { clearSession(response); return response.status(401).json({ error: 'Session expired.' }); }
   }
-  response.json({ user });
+  response.json({ user, token: signSession(user) });
 });
 
 app.get('/api/avatars/:file', async (request, response) => {
@@ -173,7 +235,7 @@ app.get('/api/friends', async (request, response, next) => {
     const user = requireSession(request, response); if (!user) return;
     if (user.isGuest) return response.status(403).json({ error: 'Create an account to view friends.' });
     const list = await repository.friends(user.id);
-    const withStatus = list.map((f) => ({ ...f, isOnline: onlineUserIds.has(f.id) }));
+    const withStatus = list.map((f: any) => ({ ...f, isOnline: onlineUserIds.has(f.id) }));
     response.json({ friends: withStatus });
   } catch (error) { next(error); }
 });
@@ -301,9 +363,58 @@ app.delete('/api/account/me', async (request, response, next) => {
 });
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: config.clientOrigin, credentials: true, methods: ['GET', 'POST'] }, transports: ['websocket', 'polling'] });
+const io = new Server(server, {
+  cors: { origin: config.clientOrigin, credentials: true, methods: ['GET', 'POST'] },
+  transports: ['websocket', 'polling'],
+  pingInterval: 5000,
+  pingTimeout: 10000
+});
 const rooms = new RoomManager(io);
 const onlineUserIds = new Map<string, number>();
+
+// Heartbeat Monitoring System:
+// Every 5s, the server pings each connected socket. If a client misses 2 consecutive pings (10s),
+// the server detects the dropped connection immediately without waiting for OS timeout,
+// detaches the socket, and updates the room/game state instantly.
+interface SocketHeartbeatState {
+  missedPings: number;
+  lastPingTimestamp: number;
+  latency: number;
+  seq: number;
+}
+const socketHeartbeats = new Map<string, SocketHeartbeatState>();
+const HEARTBEAT_INTERVAL_MS = 5000;
+const MAX_MISSED_PINGS = 2;
+
+const heartbeatTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [socketId, state] of socketHeartbeats.entries()) {
+    const socket = io.sockets.sockets.get(socketId);
+    if (!socket || !socket.connected) {
+      socketHeartbeats.delete(socketId);
+      continue;
+    }
+
+    // Check if the previous ping went unanswered
+    if (state.lastPingTimestamp > 0 && (now - state.lastPingTimestamp) >= HEARTBEAT_INTERVAL_MS - 500) {
+      state.missedPings += 1;
+    }
+
+    // If client missed 2 consecutive pings, drop connection immediately to prevent phantom players!
+    if (state.missedPings >= MAX_MISSED_PINGS) {
+      console.warn(`[Heartbeat] Socket ${socketId} for user ${socket.data.user?.username} (${socket.data.user?.id}) missed ${state.missedPings} consecutive pings. Dropping dead connection.`);
+      rooms.disconnect(socket);
+      socket.disconnect(true);
+      socketHeartbeats.delete(socketId);
+      continue;
+    }
+
+    // Send heartbeat ping packet
+    state.seq += 1;
+    state.lastPingTimestamp = now;
+    socket.emit('heartbeat:ping', { seq: state.seq, timestamp: now });
+  }
+}, HEARTBEAT_INTERVAL_MS);
 
 app.get('/api/lobby', (_request, response) => response.json({ rooms: rooms.lobby() }));
 app.post('/api/rooms', roomLimiter, (request, response, next) => {
@@ -315,7 +426,11 @@ app.post('/api/rooms', roomLimiter, (request, response, next) => {
   } catch (error) { next(error); }
 });
 app.get('/api/leaderboard', async (request, response, next) => {
-  try { const limit = z.coerce.number().int().min(1).max(100).catch(20).parse(request.query.limit); response.json({ players: await repository.leaderboard(limit) }); }
+  try {
+    const limit = z.coerce.number().int().min(1).max(100).catch(20).parse(request.query.limit);
+    const game = typeof request.query.game === 'string' ? request.query.game : undefined;
+    response.json({ players: await repository.leaderboard(limit, game) });
+  }
   catch (error) { next(error); }
 });
 app.get('/api/history', async (request, response, next) => {
@@ -335,7 +450,25 @@ app.post('/api/reports', async (request, response, next) => {
 });
 
 io.use((socket, next) => {
-  const user = verifySession(socket.handshake.headers.cookie?.split('; ').find((part) => part.startsWith('uno_session='))?.slice('uno_session='.length));
+  const cookieSession = socket.handshake.headers.cookie?.split('; ').find((part) => part.startsWith('uno_session='))?.slice('uno_session='.length);
+  const authToken = (socket.handshake.auth?.token as string | undefined) ||
+    (socket.handshake.headers['x-session-token'] as string | undefined) ||
+    (socket.handshake.headers.authorization?.replace(/^Bearer\s+/i, '')) ||
+    (socket.handshake.query?.token as string | undefined);
+
+  let user = verifySession(cookieSession) || verifySession(authToken);
+
+  // If authToken is a persistent UUID from localStorage
+  if (!user && authToken && typeof authToken === 'string' && /^[0-9a-fA-F-]{8,64}$/.test(authToken.trim())) {
+    const cleanId = authToken.trim();
+    user = {
+      id: cleanId,
+      username: `Guest_${cleanId.slice(0, 4).toUpperCase()}`,
+      isGuest: true,
+      avatarPreset: randomPresetAvatar()
+    };
+  }
+
   if (!user) return next(new Error('AUTH_REQUIRED'));
   socket.data.user = user;
   next();
@@ -344,7 +477,29 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
   const user = socket.data.user;
   onlineUserIds.set(user.id, (onlineUserIds.get(user.id) ?? 0) + 1);
+
+  // Initialize heartbeat state for this socket
+  socketHeartbeats.set(socket.id, {
+    missedPings: 0,
+    lastPingTimestamp: Date.now(),
+    latency: 0,
+    seq: 0
+  });
+
   socket.emit('session:ready', { user });
+
+  // Handle client heartbeat response (pong)
+  socket.on('heartbeat:pong', (payload: { seq?: number; clientTimestamp?: number }) => {
+    const state = socketHeartbeats.get(socket.id);
+    if (state) {
+      const now = Date.now();
+      const rtt = Math.max(1, now - state.lastPingTimestamp);
+      state.latency = rtt;
+      state.missedPings = 0; // Reset missed pings count
+      socket.emit('heartbeat:ack', { latency: rtt, timestamp: now });
+    }
+  });
+
   const roomCode = () => socket.data.roomCode as string | undefined;
   const action = <T>(event: string, schema: z.ZodType<T>, handler: (data: T, code: string) => void) => socket.on(event, (payload: unknown, ack?: (value: unknown) => void) => {
     try {
@@ -364,6 +519,12 @@ io.on('connection', (socket) => {
     catch (error) { const message = safeError(error); socket.emit('action:error', { event: 'room:join', message }); ack?.({ ok: false, error: message }); }
   });
   action('room:ready', socketSchemas.ready, ({ ready }, code) => rooms.setReady(user, code, ready));
+  action('room:add-bot', z.object({}), (_data, code) => rooms.addBot(user, code));
+  action('room:remove-bot', z.object({ botId: z.string().optional() }), ({ botId }, code) => rooms.removeBot(user, code, botId));
+  action('room:switch-game', z.object({ game: z.enum(['uno', 'ludo', 'snake']).optional(), gameType: z.enum(['uno', 'ludo', 'snake']).optional() }), (data, code) => rooms.switchGame(user, code, (data.game || data.gameType || 'uno')));
+  action('room:claim-seat', z.object({}), (_data, code) => rooms.claimSeat(user, code));
+  action('room:rematch', z.object({}), (_data, code) => rooms.rematch(user, code));
+  action('room:leave', z.object({}), () => rooms.leaveRoom(user, socket));
   action('game:start', z.object({}), (_data, code) => rooms.start(user, code));
   action('game:play', socketSchemas.play, (data, code) => rooms.play(user, code, data));
   action('game:draw', z.object({}), (_data, code) => rooms.draw(user, code));
@@ -374,9 +535,16 @@ io.on('connection', (socket) => {
   action('game:catch-uno', socketSchemas.catchUno, ({ targetPlayerId }, code) => rooms.catchUno(user, code, targetPlayerId));
   action('round:next', z.object({}), (_data, code) => rooms.nextRound(user, code));
   action('match:rematch', z.object({}), (_data, code) => rooms.voteRematch(user, code));
+  action('ludo:roll', z.object({}), (_data, code) => rooms.ludoRoll(user, code));
+  action('ludo:move', z.object({ tokenId: z.string() }), ({ tokenId }, code) => rooms.ludoMove(user, code, tokenId));
   action('chat:send', socketSchemas.chat, ({ text }, code) => rooms.addChat(user, code, text));
   action('chat:react', socketSchemas.react, ({ messageId, emoji }, code) => rooms.react(user, code, messageId, emoji));
+  action('room:emote', socketSchemas.emote, (data, code) => rooms.broadcastEmote(user, code, data));
+  action('webrtc:join-voice', z.object({}), (_data, code) => rooms.joinVoice(user, code));
+  action('webrtc:leave-voice', z.object({}), (_data, code) => rooms.leaveVoice(user, code));
+  action('webrtc:signal', socketSchemas.webrtcSignal, ({ toUserId, signal, type }, code) => rooms.relayWebRTCSignal(user, code, toUserId, signal, type));
   socket.on('disconnect', () => {
+    socketHeartbeats.delete(socket.id);
     const count = (onlineUserIds.get(user.id) ?? 1) - 1;
     if (count <= 0) onlineUserIds.delete(user.id);
     else onlineUserIds.set(user.id, count);
@@ -396,6 +564,6 @@ app.use((error: unknown, _request: Request, response: Response, _next: NextFunct
 });
 
 server.listen(config.port, () => console.log(`UNO server listening on port ${config.port}`));
-const shutdown = async () => { await repository.close(); io.close(); server.close(); };
+const shutdown = async () => { clearInterval(heartbeatTimer); await repository.close(); io.close(); server.close(); };
 process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown);
 

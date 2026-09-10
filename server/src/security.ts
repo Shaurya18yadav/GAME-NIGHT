@@ -8,6 +8,17 @@ import type { SessionUser } from './types.js';
 
 const COOKIE_NAME = 'uno_session';
 
+export function cryptoRandomString(length: number = 12): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const hex = randomUUID().replace(/-/g, '');
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    const code = parseInt(hex.substr((i * 2) % hex.length, 2), 16);
+    result += chars[code % chars.length];
+  }
+  return result;
+}
+
 export function sanitizeText(value: string, max: number): string {
   const clean = sanitizeHtml(value, { allowedTags: [], allowedAttributes: {} }).replace(/[\u0000-\u001F\u007F]/g, ' ').trim();
   if (!clean || clean.length > max) throw new Error(`Must be between 1 and ${max} characters.`);
@@ -56,7 +67,25 @@ export function verifySession(token?: string): SessionUser | undefined {
 }
 
 export function sessionFromRequest(request: Request): SessionUser | undefined {
-  return verifySession(parse(request.headers.cookie ?? '')[COOKIE_NAME]);
+  const cookieToken = parse(request.headers.cookie ?? '')[COOKIE_NAME];
+  const headerToken = (request.headers['x-session-token'] as string | undefined) || request.headers.authorization?.replace(/^Bearer\s+/i, '');
+  const token = cookieToken || headerToken;
+  if (!token) return undefined;
+  
+  const verified = verifySession(token);
+  if (verified) return verified;
+  
+  // If token is a persistent guest UUID, allow resolving a guest user session
+  if (typeof token === 'string' && /^[0-9a-fA-F-]{8,64}$/.test(token.trim())) {
+    const cleanId = token.trim();
+    return {
+      id: cleanId,
+      username: `Guest_${cleanId.slice(0, 4).toUpperCase()}`,
+      isGuest: true,
+      avatarPreset: randomPresetAvatar()
+    };
+  }
+  return undefined;
 }
 
 export function requireSession(request: Request, response: Response): SessionUser | undefined {
