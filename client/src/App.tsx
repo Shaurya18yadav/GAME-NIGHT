@@ -640,7 +640,7 @@ function MainHubLanding({ user, setUser, ensureGuest }: { user?: User; setUser: 
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '2rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '1.5rem' }}>
             
             {/* GAME LOGO CARD 1: UNO NIGHT */}
             <div

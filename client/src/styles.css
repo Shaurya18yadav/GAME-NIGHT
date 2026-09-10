@@ -28,11 +28,28 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at 85% 0%, #183b63 0, transparent 35rem), #081321; color: var(--text-primary); }
-button, input, textarea, select { font: inherit; }
-button { cursor: pointer; }
+html {
+  overflow-x: hidden;
+  max-width: 100vw;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  max-width: 100vw;
+  overflow-x: hidden;
+  background: radial-gradient(circle at 85% 0%, #183b63 0, transparent 35rem), #081321;
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+button, input, textarea, select {
+  font: inherit;
+  touch-action: manipulation;
+}
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 button:disabled { cursor: not-allowed; opacity: .48; }
-a { color: inherit; text-decoration: none; }
+a { color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
 
 header {
   height: 4.3rem;
@@ -4501,6 +4518,480 @@ section {
   background: #ef4444 !important;
   animation: ludoPulse 0.45s infinite !important;
 }
+
+/* ==========================================================================
+   COMPREHENSIVE MOBILE & TABLET RESPONSIVE SYSTEM
+   ========================================================================== */
+
+/* 1. TABLET BREAKPOINT (max-width: 860px) */
+@media (max-width: 860px) {
+  header {
+    height: auto;
+    min-height: 3.8rem;
+    padding: 0.6rem 1.2rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  nav {
+    width: 100%;
+    overflow-x: auto;
+    padding: 0.25rem 0 0.4rem;
+    gap: 0.45rem;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    display: flex;
+    align-items: center;
+  }
+
+  nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  nav a {
+    padding: 0.35rem 0.7rem;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .nav-user {
+    flex-shrink: 0;
+    gap: 0.4rem;
+    margin-left: auto;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    padding: 2rem 1rem;
+  }
+
+  .hero h1 {
+    font-size: clamp(2rem, 6vw, 3.2rem) !important;
+  }
+
+  .hero .lede {
+    font-size: 1rem !important;
+  }
+
+  .game-top-bar {
+    height: auto;
+    min-height: 3.4rem;
+    padding: 0.5rem 0.8rem;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.8rem;
+  }
+
+  .top-bar-center {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .top-bar-left, .top-bar-right {
+    gap: 0.4rem;
+  }
+
+  .game-arena.with-chat {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-sidebar-col {
+    width: 100%;
+    position: static;
+    max-height: 380px;
+  }
+}
+
+/* 2. MOBILE PHONES (max-width: 640px) */
+@media (max-width: 640px) {
+  header {
+    padding: 0.5rem 0.8rem;
+  }
+
+  .brand {
+    font-size: 0.95rem;
+  }
+
+  nav a {
+    padding: 0.3rem 0.55rem;
+    font-size: 0.8rem;
+  }
+
+  .connection-status-pill {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.72rem;
+  }
+
+  /* Page Wrapper */
+  .page, .game-page, .game-page-v2 {
+    padding: 0.5rem 0.6rem;
+  }
+
+  .wrap {
+    padding: 0 0.5rem;
+  }
+
+  /* Section Headings */
+  .section-head h2 {
+    font-size: 1.6rem !important;
+  }
+
+  .section-head p {
+    font-size: 0.88rem !important;
+  }
+
+  /* Hero Actions */
+  .hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: 0.6rem;
+  }
+
+  .hero-actions button,
+  .hero-actions a {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  /* Game Top Bar */
+  .game-top-bar {
+    border-radius: 0.6rem;
+    padding: 0.45rem 0.6rem;
+  }
+
+  .game-brand {
+    font-size: 0.92rem;
+  }
+
+  .back-btn-pill {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.78rem;
+  }
+
+  .room-code-tag {
+    font-size: 0.72rem;
+    padding: 0.2rem 0.45rem;
+  }
+
+  .icon-btn-small {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.74rem;
+  }
+
+  .turn-status-indicator {
+    font-size: 0.82rem;
+  }
+
+  .turn-timer-pill {
+    font-size: 0.78rem;
+    padding: 0.25rem 0.6rem;
+  }
+
+  /* LUDO BOARD RESPONSIVENESS */
+  .table-stage.ludo-table-stage {
+    padding: 0.5rem 0.2rem;
+  }
+
+  .ludo-center-col {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .ludo-board-wrap {
+    width: 100%;
+    max-width: 100%;
+    margin: 0.5rem 0;
+  }
+
+  .ludo-board-frame {
+    padding: 6px;
+    border-width: 2.5px;
+    border-radius: var(--radius-md);
+  }
+
+  .ludo-badge {
+    position: absolute;
+    min-width: 68px;
+    padding: 2px 5px 2px 2px;
+    gap: 3px;
+    border-width: 1px;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+  }
+
+  .ludo-badge.tl { top: -6px; left: 0; }
+  .ludo-badge.tr { top: -6px; right: 0; }
+  .ludo-badge.bl { bottom: -6px; left: 0; }
+  .ludo-badge.br { bottom: -6px; right: 0; }
+
+  .ludo-badge .av {
+    width: 22px;
+    height: 22px;
+    font-size: 0.75rem;
+    border-width: 1px;
+  }
+
+  .ludo-badge .nm {
+    font-size: 9.5px;
+    line-height: 1.1;
+  }
+
+  .ludo-badge .nm .player-name-text {
+    max-width: 48px;
+  }
+
+  .ludo-badge .turn-tag {
+    font-size: 8px;
+  }
+
+  .ludo-controls-card {
+    padding: 0.65rem 0.85rem;
+    margin-top: 0.5rem;
+    border-radius: 0.85rem;
+  }
+
+  .ludo-controls-card h3 {
+    font-size: 0.95rem;
+  }
+
+  .ludo-rolling-dice-btn {
+    width: 58px;
+    height: 58px;
+    font-size: 1.8rem;
+  }
+
+  /* SNAKE ARCADE RESPONSIVENESS */
+  .table-stage.snake-table-stage {
+    padding: 0.5rem 0.2rem;
+  }
+
+  .snake-arena-col {
+    max-width: 100%;
+    padding: 0 0.25rem;
+  }
+
+  .snake-canvas-box {
+    width: 100%;
+    max-width: min(94vw, 420px);
+    padding: 0.4rem;
+    border-radius: 1rem;
+  }
+
+  .snake-top-toolbar {
+    flex-direction: column;
+    gap: 0.4rem;
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .snake-mode-pills {
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .snake-dpad {
+    margin-top: 0.6rem;
+    gap: 5px;
+  }
+
+  .dpad-btn {
+    width: 54px;
+    height: 48px;
+    font-size: 1.3rem;
+  }
+
+  .dpad-mid-row {
+    gap: 5px;
+  }
+
+  .snake-status-strip {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+    width: 100%;
+  }
+
+  .snake-stat-pill {
+    justify-content: space-between;
+    font-size: 0.8rem;
+    padding: 0.35rem 0.65rem;
+  }
+
+  /* UNO TABLE & HAND RESPONSIVENESS */
+  .table {
+    min-height: 27rem;
+    padding: 0.75rem 0.35rem;
+    border-radius: 1.25rem;
+  }
+
+  .board {
+    transform: scale(0.8);
+    margin: -1.8rem 0;
+  }
+
+  .opponents {
+    padding: 0.2rem 0.4rem;
+    gap: 0.4rem;
+    justify-content: flex-start;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .player-badge {
+    min-width: 7.8rem;
+    padding: 0.35rem 0.55rem;
+    font-size: 0.8rem;
+  }
+
+  .hand {
+    padding: 0.4rem 0.2rem 0.8rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100vw;
+  }
+
+  .hand .uno-card {
+    height: 5.2rem;
+    width: 3.5rem;
+    flex: 0 0 3.5rem;
+    border-width: 2px;
+  }
+
+  .hand .uno-card + .uno-card {
+    margin-left: -1.5rem;
+  }
+
+  .hand .uno-card span {
+    font-size: 1.15rem;
+  }
+
+  .controls {
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+
+  .uno-button {
+    font-size: 1.15rem;
+    padding: 0.5rem 1.2rem;
+  }
+
+  .wild-picker {
+    padding: 0.35rem;
+    gap: 0.35rem;
+  }
+
+  .color-choice {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.8rem;
+  }
+
+  /* MODALS & OVERLAYS */
+  .modal-backdrop {
+    padding: 0.4rem;
+    align-items: flex-end;
+  }
+
+  .modal, .modal.panel {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 90vh !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    padding: 1.25rem !important;
+  }
+
+  .modal h2 {
+    font-size: 1.3rem;
+  }
+
+  .modal .close {
+    top: 0.5rem;
+    right: 0.65rem;
+  }
+
+  /* CTA Band & Cards */
+  .ctaband {
+    padding: 1.5rem 1.2rem !important;
+    flex-direction: column;
+    text-align: center;
+    border-radius: 1.2rem !important;
+  }
+
+  .ctaband h2 {
+    font-size: 1.5rem !important;
+  }
+
+  .ctaband button {
+    width: 100%;
+  }
+
+  /* Form Stacks */
+  .form-stack input,
+  .form-stack select,
+  .form-stack textarea {
+    font-size: 0.95rem;
+    padding: 0.65rem 0.85rem;
+  }
+
+  /* Floating Reaction Wheel */
+  .reaction-wheel-container {
+    scale: 0.9;
+    transform-origin: top right;
+  }
+
+  /* Voice Chat Bar */
+  .voice-chat-bar {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+  }
+}
+
+/* 3. EXTRA SMALL PHONES (max-width: 380px) */
+@media (max-width: 380px) {
+  .brand {
+    font-size: 0.88rem;
+  }
+
+  .brand b {
+    padding: 0.12rem 0.25rem;
+  }
+
+  .ludo-badge {
+    min-width: 60px;
+    padding: 2px 4px 2px 2px;
+  }
+
+  .ludo-badge .nm .player-name-text {
+    max-width: 38px;
+  }
+
+  .hand .uno-card {
+    height: 4.8rem;
+    width: 3.2rem;
+    flex: 0 0 3.2rem;
+  }
+
+  .hand .uno-card + .uno-card {
+    margin-left: -1.65rem;
+  }
+}
+
 
 
 
