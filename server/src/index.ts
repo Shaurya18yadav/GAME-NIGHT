@@ -26,7 +26,10 @@ const app = express();
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use((request, response, next) => {
-  if (config.production && request.header('x-forwarded-proto') !== 'https') return response.redirect(308, `https://${request.header('host')}${request.originalUrl}`);
+  if (request.path === '/api/health') return next();
+  if (config.production && request.header('x-forwarded-proto') && request.header('x-forwarded-proto') !== 'https') {
+    return response.redirect(308, `https://${request.header('host')}${request.originalUrl}`);
+  }
   next();
 });
 app.use(helmet({
@@ -563,7 +566,7 @@ app.use((error: unknown, _request: Request, response: Response, _next: NextFunct
   response.status(status).json({ error: safeError(error) });
 });
 
-server.listen(config.port, () => console.log(`UNO server listening on port ${config.port}`));
+server.listen(config.port, '0.0.0.0', () => console.log(`UNO server listening on 0.0.0.0:${config.port}`));
 const shutdown = async () => { clearInterval(heartbeatTimer); await repository.close(); io.close(); server.close(); };
 process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown);
 
