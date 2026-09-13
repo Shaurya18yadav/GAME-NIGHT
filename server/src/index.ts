@@ -35,11 +35,31 @@ app.use((request, response, next) => {
   }
   next();
 });
+const isOriginAllowed = (origin?: string): boolean => {
+  if (!origin) return true;
+  if (origin === config.clientOrigin) return true;
+  if (origin.endsWith('.onrender.com')) return true;
+  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  return true;
+};
+
 app.use(helmet({
-  contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], connectSrc: ["'self'", config.clientOrigin], imgSrc: ["'self'", 'data:', 'https:'], styleSrc: ["'self'", "'unsafe-inline'"] } },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      connectSrc: ["'self'", config.clientOrigin, '*.onrender.com', 'https:', 'wss:', 'ws:'],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"]
+    }
+  },
   hsts: config.production ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false
 }));
-app.use(cors({ origin: config.clientOrigin, credentials: true, methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'] }));
+app.use(cors({
+  origin: (origin, callback) => callback(null, isOriginAllowed(origin)),
+  credentials: true,
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS']
+}));
 app.use(express.json({ limit: '16kb', type: 'application/json' }));
 app.use(cookieParser());
 
@@ -368,7 +388,7 @@ app.delete('/api/account/me', async (request, response, next) => {
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: config.clientOrigin, credentials: true, methods: ['GET', 'POST'] },
+  cors: { origin: (origin, callback) => callback(null, isOriginAllowed(origin)), credentials: true, methods: ['GET', 'POST'] },
   transports: ['websocket', 'polling'],
   pingInterval: 5000,
   pingTimeout: 10000
