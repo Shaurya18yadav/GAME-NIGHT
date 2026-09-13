@@ -96,20 +96,21 @@ export function requireSession(request: Request, response: Response): SessionUse
 
 export function setSession(response: Response, user: SessionUser): void {
   response.cookie(COOKIE_NAME, signSession(user), {
-    httpOnly: true, secure: config.production, sameSite: 'strict', path: '/', maxAge: user.isGuest ? 48 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
+    httpOnly: true, secure: config.production, sameSite: 'lax', path: '/', maxAge: user.isGuest ? 48 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
   });
 }
 
 export function clearSession(response: Response): void {
-  response.clearCookie(COOKIE_NAME, { httpOnly: true, secure: config.production, sameSite: 'strict', path: '/' });
+  response.clearCookie(COOKIE_NAME, { httpOnly: true, secure: config.production, sameSite: 'lax', path: '/' });
 }
 
 export function hashEmail(email: string): string { return createHmac('sha256', config.sessionSecret).update(email.trim().toLowerCase()).digest('hex'); }
 
 function encryptionKey(): Buffer {
-  const key = Buffer.from(config.emailEncryptionKey, 'hex');
-  if (key.length !== 32) throw new Error('EMAIL_ENCRYPTION_KEY must be a 64-character hexadecimal AES-256 key.');
-  return key;
+  if (/^[0-9a-fA-F]{64}$/.test(config.emailEncryptionKey)) {
+    return Buffer.from(config.emailEncryptionKey, 'hex');
+  }
+  return createHmac('sha256', config.sessionSecret).update(config.emailEncryptionKey).digest();
 }
 
 export function encryptSensitive(value: string): string {

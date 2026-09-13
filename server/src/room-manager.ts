@@ -574,7 +574,7 @@ export class RoomManager {
     const ls = room.game.state.ludoState;
     if (!ls) throw new GameRuleError('Ludo match is not active.');
     const activePlayer = room.game.state.players.find((p) => p.ludoColor === ls.turnColor);
-    if (activePlayer && activePlayer.id !== user.id && !user.isGuest && !activePlayer.isBot) {
+    if (activePlayer && activePlayer.id !== user.id && !activePlayer.isBot) {
       throw new GameRuleError("It is not your turn to roll.");
     }
     if (ls.phase !== 'awaiting-roll') return;
@@ -610,7 +610,7 @@ export class RoomManager {
     const ls = room.game.state.ludoState;
     if (!ls) throw new GameRuleError('Ludo match is not active.');
     const activePlayer = room.game.state.players.find((p) => p.ludoColor === ls.turnColor);
-    if (activePlayer && activePlayer.id !== user.id && !user.isGuest && !activePlayer.isBot) {
+    if (activePlayer && activePlayer.id !== user.id && !activePlayer.isBot) {
       throw new GameRuleError("It is not your turn to move.");
     }
     if (ls.phase !== 'awaiting-choice') return;
@@ -889,6 +889,8 @@ export class RoomManager {
     const now = Date.now();
     for (const [code, room] of this.rooms.entries()) {
       if (room.users.size === 0 && (now - room.createdAt > 15 * 60 * 1000 || room.game.state.status === 'match-over')) {
+        if (room.timer) clearTimeout(room.timer);
+        if (room.botTimer) clearTimeout(room.botTimer);
         for (const [key, timer] of this.graceTimers.entries()) {
           if (key.startsWith(`${code}:`)) {
             clearTimeout(timer);

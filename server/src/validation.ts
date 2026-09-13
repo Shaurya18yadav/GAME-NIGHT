@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const roomOptionsSchema = z.object({
   gameType: z.enum(['uno', 'ludo', 'snake']).default('uno'),
   isPrivate: z.boolean().default(true),
-  maxPlayers: z.number().int().min(2).max(10).default(2),
+  maxPlayers: z.number().int().min(1).max(10).default(2),
   botCount: z.number().int().min(0).max(9).default(0),
   autoStart: z.boolean().default(false),
   targetScore: z.number().int().min(50).max(1000).default(500),

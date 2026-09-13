@@ -12,5 +12,11 @@
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
+  },
+  "overrides": {
+    "express": {
+      "qs": "^6.16.0"
+    },
+    "qs": "^6.16.0"
   }
 }

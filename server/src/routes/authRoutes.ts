@@ -2,7 +2,9 @@ import { Router, Request, Response } from 'express';
 import passport from 'passport';
 import rateLimit from 'express-rate-limit';
 import { dbUser, dbOtp, UserRow } from '../db.js';
+import { repository } from '../repository.js';
 import { sendOtpEmail } from '../emailService.js';
+import { config } from '../config.js';
 import {
   hashPassword,
   comparePassword,
@@ -10,14 +12,22 @@ import {
   clearAuthToken,
   AuthenticatedRequest
 } from '../authHelper.js';
-import { cryptoRandomString } from '../security.js';
+import {
+  cryptoRandomString,
+  encryptSensitive,
+  hashEmail,
+  sessionFromRequest,
+  signSession,
+  randomPresetAvatar
+} from '../security.js';
+import type { SessionUser } from '../types.js';
 
 export const authRouter = Router();
 
 // Rate limiters for authentication endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 15, // limit each IP to 15 requests per windowMs
+  max: 30, // limit each IP to 30 requests per windowMs
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many attempts from this IP, please try again after 15 minutes.' }
@@ -33,6 +43,26 @@ function formatUserResponse(user: UserRow) {
     avatarPreset: user.avatar_preset || undefined,
     provider: user.provider || undefined
   };
+}
+
+// Helper to ensure repository has a corresponding record for stats & match history
+async function syncToRepository(user: UserRow, email?: string, passwordHash?: string) {
+  try {
+    const cleanEmail = (email || user.email || `${user.username.toLowerCase()}@local.game`).trim().toLowerCase();
+    await repository.createAccount({
+      id: user.id,
+      username: user.username,
+      isGuest: Boolean(user.is_guest),
+      avatarUrl: user.avatar_url || undefined,
+      avatarPreset: user.avatar_preset || undefined,
+      emailCiphertext: encryptSensitive(cleanEmail),
+      emailHash: hashEmail(cleanEmail),
+      passwordHash: passwordHash || user.password_hash || 'OAUTH_EXTERNAL',
+      createdAt: new Date().toISOString()
+    });
+  } catch {
+    // Ignore duplicate or existing account errors
+  }
 }
 
 // 1. POST /api/auth/register
@@ -56,7 +86,7 @@ authRouter.post('/register', authLimiter, async (req: Request, res: Response) =>
     const cleanUsername = username.trim();
     const cleanEmail = email.trim().toLowerCase();
 
-    // Check existing username or email
+    // Check existing username or email in SQLite
     if (dbUser.findByEmailOrUsername(cleanUsername)) {
       return res.status(409).json({ error: 'Username is already taken.' });
     }
@@ -75,13 +105,16 @@ authRouter.post('/register', authLimiter, async (req: Request, res: Response) =>
       email: cleanEmail,
       passwordHash,
       isGuest: false,
-      avatarUrl: typeof avatarUrl === 'string' ? avatarUrl.trim() : undefined
+      avatarUrl: typeof avatarUrl === 'string' ? avatarUrl.trim() : undefined,
+      avatarPreset: randomPresetAvatar()
     });
 
-    // Issue httpOnly JWT cookie
-    issueAuthToken(res, newUser);
+    await syncToRepository(newUser, cleanEmail, passwordHash);
 
-    return res.status(201).json({ user: formatUserResponse(newUser) });
+    // Issue unified httpOnly cookie & session token
+    const token = issueAuthToken(res, newUser);
+
+    return res.status(201).json({ user: formatUserResponse(newUser), token });
   } catch (err) {
     console.error('Registration error:', err);
     return res.status(500).json({ error: 'An error occurred during registration.' });
@@ -159,19 +192,39 @@ authRouter.post('/verify-otp', authLimiter, async (req: Request, res: Response) 
         email: cleanEmail,
         passwordHash,
         isGuest: false,
-        avatarUrl: typeof avatarUrl === 'string' ? avatarUrl.trim() : undefined
+        avatarUrl: typeof avatarUrl === 'string' ? avatarUrl.trim() : undefined,
+        avatarPreset: randomPresetAvatar()
       });
 
-      issueAuthToken(res, newUser);
+      await syncToRepository(newUser, cleanEmail, passwordHash);
 
-      return res.status(201).json({ user: formatUserResponse(newUser) });
+      const token = issueAuthToken(res, newUser);
+
+      return res.status(201).json({ user: formatUserResponse(newUser), token });
     } else {
-      const user = dbUser.findByEmailOrUsername(cleanEmail);
+      let user = dbUser.findByEmailOrUsername(cleanEmail);
+      if (!user) {
+        // Fallback to repository
+        const account = await repository.findAccountByEmailHash(hashEmail(cleanEmail));
+        if (account) {
+          user = dbUser.createUser({
+            id: account.id,
+            username: account.username,
+            email: cleanEmail,
+            passwordHash: account.passwordHash,
+            isGuest: false,
+            avatarUrl: account.avatarUrl,
+            avatarPreset: account.avatarPreset
+          });
+        }
+      }
+
       if (!user) {
         return res.status(404).json({ error: 'User not found.' });
       }
-      issueAuthToken(res, user);
-      return res.json({ user: formatUserResponse(user) });
+
+      const token = issueAuthToken(res, user);
+      return res.json({ user: formatUserResponse(user), token });
     }
   } catch (err) {
     console.error('Verify OTP error:', err);
@@ -189,12 +242,31 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid credentials.' });
     }
 
-    // Find user by email or username
-    const user = dbUser.findByEmailOrUsername(identifier);
+    // 1. Find user by email or username in SQLite
+    let user = dbUser.findByEmailOrUsername(identifier);
 
-    // Constant-shape error (don't leak if user exists)
+    // 2. Fallback to repository if not found in SQLite
+    if (!user) {
+      const emailHash = hashEmail(identifier);
+      const account = await repository.findAccountByEmailHash(emailHash);
+      if (account) {
+        const match = await comparePassword(password, account.passwordHash);
+        if (match) {
+          user = dbUser.createUser({
+            id: account.id,
+            username: account.username,
+            email: identifier.includes('@') ? identifier.toLowerCase() : null,
+            passwordHash: account.passwordHash,
+            isGuest: false,
+            avatarUrl: account.avatarUrl,
+            avatarPreset: account.avatarPreset
+          });
+        }
+      }
+    }
+
+    // Constant-shape error (mitigate timing attacks)
     if (!user || !user.password_hash || user.is_guest) {
-      // Fake compare to mitigate timing attacks
       await comparePassword(password, '$2a$12$e868d4vJz6Jz6Jz6Jz6Jz.w0fF6S6S6S6S6S6S6S6S6S6S6S6S6S6');
       return res.status(401).json({ error: 'Invalid credentials.' });
     }
@@ -204,10 +276,10 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid credentials.' });
     }
 
-    // Issue httpOnly JWT cookie
-    issueAuthToken(res, user);
+    // Issue unified httpOnly JWT cookie & return token
+    const token = issueAuthToken(res, user);
 
-    return res.json({ user: formatUserResponse(user) });
+    return res.json({ user: formatUserResponse(user), token });
   } catch (err) {
     console.error('Login error:', err);
     return res.status(401).json({ error: 'Invalid credentials.' });
@@ -217,28 +289,43 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response) => {
 // 3. POST /api/auth/guest
 authRouter.post('/guest', async (req: Request, res: Response) => {
   try {
+    // If request already carries a valid active session, reuse it
+    const existing = sessionFromRequest(req);
+    if (existing) {
+      const token = signSession(existing);
+      return res.json({ user: existing, token });
+    }
+
+    const sessionToken = (req.headers['x-session-token'] as string | undefined) || req.body?.sessionToken;
     const requestedName = req.body?.username;
+    const hasPersistentId = Boolean(sessionToken && /^[0-9a-fA-F-]{8,64}$/.test(sessionToken.trim()));
+    const userId = hasPersistentId ? sessionToken!.trim() : cryptoRandomString(12);
+
     let username = typeof requestedName === 'string' && requestedName.trim().length >= 3
       ? requestedName.trim()
-      : `Guest_${cryptoRandomString(5)}`;
+      : `Guest_${userId.slice(0, 4).toUpperCase()}`;
 
-    // Ensure unique guest username
+    // Ensure unique guest username in SQLite
     let uniqueUsername = username;
     let count = 1;
     while (dbUser.findByEmailOrUsername(uniqueUsername)) {
       uniqueUsername = `${username}_${count++}`;
     }
 
-    const newUser = dbUser.createUser({
-      id: cryptoRandomString(12),
-      username: uniqueUsername,
-      isGuest: true
-    });
+    let user = dbUser.findById(userId);
+    if (!user) {
+      user = dbUser.createUser({
+        id: userId,
+        username: uniqueUsername,
+        isGuest: true,
+        avatarPreset: randomPresetAvatar()
+      });
+    }
 
-    // Issue identical JWT token in httpOnly cookie
-    issueAuthToken(res, newUser);
+    // Issue unified JWT token and cookie
+    const token = issueAuthToken(res, user);
 
-    return res.status(201).json({ user: formatUserResponse(newUser) });
+    return res.status(201).json({ user: formatUserResponse(user), token });
   } catch (err) {
     console.error('Guest creation error:', err);
     return res.status(500).json({ error: 'Could not create guest session.' });
@@ -252,12 +339,33 @@ authRouter.post('/logout', (_req: Request, res: Response) => {
 });
 
 // 5. GET /api/auth/me
-authRouter.get('/me', (req: Request, res: Response) => {
+authRouter.get('/me', async (req: Request, res: Response) => {
   const authReq = req as AuthenticatedRequest;
-  if (!authReq.user) {
-    return res.json({ user: null });
+  let user = authReq.user;
+
+  if (!user) {
+    const session = sessionFromRequest(req);
+    if (session) {
+      user = dbUser.findById(session.id);
+      if (!user) {
+        return res.json({ user: session, token: signSession(session) });
+      }
+    }
   }
-  return res.json({ user: formatUserResponse(authReq.user) });
+
+  if (!user) {
+    return res.status(401).json({ error: 'No active session.' });
+  }
+
+  const sessionUser: SessionUser = {
+    id: user.id,
+    username: user.username,
+    isGuest: Boolean(user.is_guest),
+    avatarUrl: user.avatar_url || undefined,
+    avatarPreset: user.avatar_preset || undefined
+  };
+
+  return res.json({ user: formatUserResponse(user), token: signSession(sessionUser) });
 });
 
 // 6. Google OAuth Routes
@@ -269,12 +377,13 @@ authRouter.get('/google', (req: Request, res: Response, next) => {
 });
 
 authRouter.get('/google/callback', (req: Request, res: Response, next) => {
-  passport.authenticate('google', { failureRedirect: '/?auth_error=google_failed', session: false }, (err: Error | null, user: UserRow | false) => {
+  passport.authenticate('google', { failureRedirect: '/?auth_error=google_failed', session: false }, async (err: Error | null, user: UserRow | false) => {
     if (err || !user) {
-      return res.redirect(`${process.env.CLIENT_URL || ''}/?auth_error=google_failed`);
+      return res.redirect(`${process.env.CLIENT_URL || config.clientOrigin}/?auth_error=google_failed`);
     }
+    await syncToRepository(user);
     issueAuthToken(res, user);
-    return res.redirect(`${process.env.CLIENT_URL || ''}/lobby`);
+    return res.redirect(`${process.env.CLIENT_URL || config.clientOrigin}/lobby`);
   })(req, res, next);
 });
 
@@ -287,11 +396,12 @@ authRouter.get('/discord', (req: Request, res: Response, next) => {
 });
 
 authRouter.get('/discord/callback', (req: Request, res: Response, next) => {
-  passport.authenticate('discord', { failureRedirect: '/?auth_error=discord_failed', session: false }, (err: Error | null, user: UserRow | false) => {
+  passport.authenticate('discord', { failureRedirect: '/?auth_error=discord_failed', session: false }, async (err: Error | null, user: UserRow | false) => {
     if (err || !user) {
-      return res.redirect(`${process.env.CLIENT_URL || ''}/?auth_error=discord_failed`);
+      return res.redirect(`${process.env.CLIENT_URL || config.clientOrigin}/?auth_error=discord_failed`);
     }
+    await syncToRepository(user);
     issueAuthToken(res, user);
-    return res.redirect(`${process.env.CLIENT_URL || ''}/lobby`);
+    return res.redirect(`${process.env.CLIENT_URL || config.clientOrigin}/lobby`);
   })(req, res, next);
 });

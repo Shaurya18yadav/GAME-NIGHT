@@ -1,4 +1,6 @@
 import http from 'node:http';
+import path from 'node:path';
+import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import helmet from 'helmet';
@@ -10,6 +12,7 @@ import { ZodError, z } from 'zod';
 import { config } from './config.js';
 import { RoomManager } from './room-manager.js';
 import { repository } from './repository.js';
+import { dbFeedback } from './db.js';
 import { avatarUploadLimit, loadAvatar, saveAvatar } from './avatar-storage.js';
 import { clearSession, encryptSensitive, hashEmail, newGuestUsername, randomPresetAvatar, requireSession, sanitizeText, sanitizeUsername, sessionFromRequest, setSession, signSession, verifySession } from './security.js';
 import { codeSchema, convertGuestSchema, friendSchema, guestSchema, loginSchema, reportSchema, roomOptionsSchema, signupSchema, socketSchemas, updateCredentialsSchema, updateProfileSchema } from './validation.js';
@@ -68,8 +71,6 @@ const profileLimiter = rateLimit({ windowMs: 60 * 1000, limit: 60, standardHeade
 const avatarLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 30, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Avatar upload limit reached. Try later.' } });
 
 app.get('/api/health', (_request, response) => response.json({ ok: true }));
-
-import { dbFeedback } from './db.js';
 
 app.get('/api/feedbacks', (_req, res) => {
   const feedbacks = dbFeedback.getAll();
@@ -376,18 +377,19 @@ const rooms = new RoomManager(io);
 const onlineUserIds = new Map<string, number>();
 
 // Heartbeat Monitoring System:
-// Every 5s, the server pings each connected socket. If a client misses 2 consecutive pings (10s),
-// the server detects the dropped connection immediately without waiting for OS timeout,
-// detaches the socket, and updates the room/game state instantly.
+// Every 5s, the server pings each connected socket. If a client misses 3 consecutive pings (15s),
+// the server detects the dropped connection without waiting for OS timeout,
+// detaches the socket, and updates the room/game state cleanly.
 interface SocketHeartbeatState {
   missedPings: number;
   lastPingTimestamp: number;
   latency: number;
   seq: number;
+  pendingPong: boolean;
 }
 const socketHeartbeats = new Map<string, SocketHeartbeatState>();
 const HEARTBEAT_INTERVAL_MS = 5000;
-const MAX_MISSED_PINGS = 2;
+const MAX_MISSED_PINGS = 3;
 
 const heartbeatTimer = setInterval(() => {
   const now = Date.now();
@@ -398,12 +400,12 @@ const heartbeatTimer = setInterval(() => {
       continue;
     }
 
-    // Check if the previous ping went unanswered
-    if (state.lastPingTimestamp > 0 && (now - state.lastPingTimestamp) >= HEARTBEAT_INTERVAL_MS - 500) {
+    // Only count as missed if the previous ping was never answered
+    if (state.pendingPong) {
       state.missedPings += 1;
     }
 
-    // If client missed 2 consecutive pings, drop connection immediately to prevent phantom players!
+    // If client missed 3 consecutive pings, drop connection immediately to prevent phantom players!
     if (state.missedPings >= MAX_MISSED_PINGS) {
       console.warn(`[Heartbeat] Socket ${socketId} for user ${socket.data.user?.username} (${socket.data.user?.id}) missed ${state.missedPings} consecutive pings. Dropping dead connection.`);
       rooms.disconnect(socket);
@@ -415,6 +417,7 @@ const heartbeatTimer = setInterval(() => {
     // Send heartbeat ping packet
     state.seq += 1;
     state.lastPingTimestamp = now;
+    state.pendingPong = true;
     socket.emit('heartbeat:ping', { seq: state.seq, timestamp: now });
   }
 }, HEARTBEAT_INTERVAL_MS);
@@ -486,7 +489,8 @@ io.on('connection', (socket) => {
     missedPings: 0,
     lastPingTimestamp: Date.now(),
     latency: 0,
-    seq: 0
+    seq: 0,
+    pendingPong: false
   });
 
   socket.emit('session:ready', { user });
@@ -498,6 +502,7 @@ io.on('connection', (socket) => {
       const now = Date.now();
       const rtt = Math.max(1, now - state.lastPingTimestamp);
       state.latency = rtt;
+      state.pendingPong = false;
       state.missedPings = 0; // Reset missed pings count
       socket.emit('heartbeat:ack', { latency: rtt, timestamp: now });
     }
@@ -560,6 +565,22 @@ function safeError(error: unknown): string {
   if (error instanceof Error && /username|account|email|password/i.test(error.message)) return error.message;
   return 'The request could not be completed.';
 }
+
+// Serve production client build if available (supports unified container & full-stack deploys)
+const clientDistPath = [
+  path.resolve(process.cwd(), '../client/dist'),
+  path.resolve(process.cwd(), 'client/dist'),
+  path.resolve(process.cwd(), 'dist/client')
+].find((candidate) => fs.existsSync(candidate));
+
+if (clientDistPath) {
+  app.use(express.static(clientDistPath));
+  app.get('*', (req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) return next();
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+  });
+}
+
 app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
   if (response.headersSent) return;
   const status = error instanceof ZodError ? 400 : error instanceof Error && /already exists/i.test(error.message) ? 409 : 400;

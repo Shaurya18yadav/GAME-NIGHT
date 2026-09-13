@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDeck } from './deck.js';
 import { UnoGame } from './game-engine.js';
-import type { Card } from './types.js';
+import { RoomManager, initLudoState } from './room-manager.js';
+import { roomOptionsSchema } from './validation.js';
+import { encryptSensitive, decryptSensitive } from './security.js';
+import type { Card, SessionUser, Player } from './types.js';
 
 const card = (id: string, color: Card['color'], value: Card['value']): Card => ({ id, color, value });
 
@@ -273,6 +276,78 @@ test('ludo official rules: clockwise turn order, safe spot protection, and bonus
   if (room.timer) clearTimeout(room.timer);
   if (room.botTimer) clearTimeout(room.botTimer);
 });
+
+test('roomOptionsSchema supports 1 player for single-player snake mode', () => {
+  const parsed = roomOptionsSchema.parse({
+    gameType: 'snake',
+    maxPlayers: 1,
+    botCount: 0
+  });
+  assert.equal(parsed.maxPlayers, 1);
+  assert.equal(parsed.botCount, 0);
+  assert.equal(parsed.gameType, 'snake');
+});
+
+test('ludo turn order strictly rejects guest player moving out of turn', () => {
+  const ioMock: any = {
+    to: () => ({ emit: () => {} }),
+    emit: () => {},
+    sockets: { adapter: { rooms: new Map() } }
+  };
+  const rm = new RoomManager(ioMock);
+  rm['armTimer'] = () => {};
+  rm['armBotTurn'] = () => {};
+
+  const host: SessionUser = { id: 'host-1', username: 'HostPlayer', isGuest: false };
+  const guest: SessionUser = { id: 'guest-2', username: 'GuestPlayer', isGuest: true };
+
+  const roomInfo = rm.createRoom(host, {
+    gameType: 'ludo',
+    isPrivate: true,
+    maxPlayers: 2,
+    botCount: 0,
+    autoStart: false,
+    targetScore: 500,
+    maxRounds: 5,
+    rules: {}
+  });
+
+  const room = rm['rooms'].get(roomInfo.code)!;
+  const guestSocket = { id: 'sock-guest', data: { user: guest }, join: () => {}, emit: () => {} } as any;
+  rm.join(guestSocket, guest, room.code);
+
+  room.game.state.status = 'playing';
+  room.game.state.ludoState = initLudoState(room.game.state.players);
+  // Ensure host (Red) has turn
+  room.game.state.ludoState.turnColor = 'red';
+  const hostPlayer = room.game.state.players.find((p: Player) => p.id === host.id)!;
+  hostPlayer.ludoColor = 'red';
+  const guestPlayer = room.game.state.players.find((p: Player) => p.id === guest.id)!;
+  guestPlayer.ludoColor = 'green';
+
+  // Guest tries to roll when it is Red's turn
+  assert.throws(() => {
+    rm.ludoRoll(guest, room.code);
+  }, /It is not your turn to roll/);
+
+  // Guest tries to move when it is Red's turn
+  room.game.state.ludoState.phase = 'awaiting-choice';
+  assert.throws(() => {
+    rm.ludoMove(guest, room.code, 'green-0');
+  }, /It is not your turn to move/);
+
+  if (room.timer) clearTimeout(room.timer);
+  if (room.botTimer) clearTimeout(room.botTimer);
+});
+
+test('encryptSensitive and decryptSensitive correctly round-trips data', () => {
+  const secretText = 'user@example.com';
+  const encrypted = encryptSensitive(secretText);
+  assert.notEqual(encrypted, secretText);
+  const decrypted = decryptSensitive(encrypted);
+  assert.equal(decrypted, secretText);
+});
+
 
 
 
