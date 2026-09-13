@@ -18,7 +18,7 @@
     "@types/passport": "^1.0.17",
     "@types/passport-discord": "^0.1.15",
     "@types/passport-google-oauth20": "^2.0.17",
-    "bcryptjs": "^2.4.3",
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.3",
     "cookie": "^1.0.2",
     "cookie-parser": "^1.4.7",
