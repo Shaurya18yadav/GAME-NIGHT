@@ -20,7 +20,7 @@
     "@types/passport-google-oauth20": "^2.0.17",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^13.0.3",
-    "cookie": "^1.0.2",
+    "cookie": "^2.0.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
