@@ -19,7 +19,6 @@ import { codeSchema, convertGuestSchema, friendSchema, guestSchema, loginSchema,
 import { GameRuleError } from './game-engine.js';
 
 import cookieParser from 'cookie-parser';
-import session from 'express-session';
 import passport from 'passport';
 import { configurePassport } from './passportConfig.js';
 import { authMiddleware } from './authHelper.js';
@@ -63,20 +62,9 @@ app.use(cors({
 app.use(express.json({ limit: '16kb', type: 'application/json' }));
 app.use(cookieParser());
 
-// Express-session used ONLY internally to bridge the OAuth redirect handshake
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || 'internal_handshake_session_secret_123',
-    resave: false,
-    saveUninitialized: false,
-    cookie: { sameSite: 'lax', httpOnly: true, secure: config.production }
-  })
-);
-
-// Initialize Passport.js for OAuth strategies
+// Initialize Passport.js for OAuth strategies (stateless session: false)
 configurePassport();
 app.use(passport.initialize());
-app.use(passport.session());
 
 // Extract JWT auth token
 app.use(authMiddleware as express.RequestHandler);
