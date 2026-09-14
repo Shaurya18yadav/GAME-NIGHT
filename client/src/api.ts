@@ -5,14 +5,16 @@ const SESSION_TOKEN_KEY = 'uno_session_token';
 const AUTH_TOKEN_KEY = 'uno_jwt_token';
 
 /**
- * Returns or generates a persistent session token (UUID) stored in browser localStorage.
- * Ensures the server remembers the player even if network or tab refreshes.
+ * Returns or generates a session token (UUID) stored in browser sessionStorage.
+ * Using sessionStorage ensures each browser tab or window gets a distinct
+ * guest player session, allowing real-time multiplayer testing across multiple tabs
+ * while surviving page refreshes within the same tab.
  */
 export function getSessionToken(): string {
-  let token = localStorage.getItem(SESSION_TOKEN_KEY);
+  let token = sessionStorage.getItem(SESSION_TOKEN_KEY);
   if (!token) {
     token = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `uno_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-    localStorage.setItem(SESSION_TOKEN_KEY, token);
+    sessionStorage.setItem(SESSION_TOKEN_KEY, token);
   }
   return token;
 }
@@ -68,10 +70,11 @@ export const api = {
     }),
   logout: () => {
     setAuthJwt(undefined);
+    sessionStorage.removeItem(SESSION_TOKEN_KEY);
     return request<void>('/api/auth/logout', { method: 'POST' });
   },
   createRoom: (body: unknown) => request<{ room: RoomMeta; inviteUrl: string }>('/api/rooms', { method: 'POST', body: JSON.stringify(body) }),
-  lobby: () => request<{ rooms: RoomMeta[] }>('/api/lobby'),
+  lobby: () => request<{ rooms: RoomMeta[]; onlinePlayers?: number; playersAtTables?: number; activeTables?: number }>('/api/lobby'),
   leaderboard: (game?: string) => request<{ players: { id: string; username: string; avatarUrl?: string; avatarPreset?: string; wins: number; losses: number; rating: number }[] }>(`/api/leaderboard${game ? `?game=${encodeURIComponent(game)}` : ''}`),
   history: () => request<{ matches: MatchSummary[] }>('/api/history'),
   report: (body: unknown) => request<{ ok: true }>('/api/reports', { method: 'POST', body: JSON.stringify(body) }),

@@ -37,7 +37,7 @@ export function ShareInviteModal({ roomCode, gameType = 'uno', roomMeta, snapsho
   };
 
   const status = snapshot?.status || roomMeta?.status || 'waiting';
-  const playerCount = snapshot?.players?.length || roomMeta?.players || 1;
+  const playerCount = snapshot?.players?.length ?? roomMeta?.players ?? 1;
   const maxPlayers = snapshot?.gameType === 'ludo' ? 4 : (roomMeta?.maxPlayers || 10);
 
   return (

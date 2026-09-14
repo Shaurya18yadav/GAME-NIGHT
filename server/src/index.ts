@@ -430,12 +430,30 @@ const heartbeatTimer = setInterval(() => {
   }
 }, HEARTBEAT_INTERVAL_MS);
 
-app.get('/api/lobby', (_request, response) => response.json({ rooms: rooms.lobby() }));
+const broadcastServerStats = () => {
+  const stats = rooms.getStats();
+  io.emit('server:stats', {
+    onlinePlayers: Math.max(1, onlineUserIds.size),
+    playersAtTables: stats.totalPlayersAtTables,
+    activeTables: stats.activeRooms
+  });
+};
+
+app.get('/api/lobby', (_request, response) => {
+  const stats = rooms.getStats();
+  return response.json({
+    rooms: rooms.lobby(),
+    onlinePlayers: Math.max(1, onlineUserIds.size),
+    playersAtTables: stats.totalPlayersAtTables,
+    activeTables: stats.activeRooms
+  });
+});
 app.post('/api/rooms', roomLimiter, (request, response, next) => {
   try {
     const user = requireSession(request, response); if (!user) return;
     const options = roomOptionsSchema.parse(request.body ?? {});
     const room = rooms.createRoom(user, options);
+    broadcastServerStats();
     response.status(201).json({ room, inviteUrl: `${config.clientOrigin}/room/${room.code}` });
   } catch (error) { next(error); }
 });
@@ -491,6 +509,7 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
   const user = socket.data.user;
   onlineUserIds.set(user.id, (onlineUserIds.get(user.id) ?? 0) + 1);
+  broadcastServerStats();
 
   // Initialize heartbeat state for this socket
   socketHeartbeats.set(socket.id, {
@@ -535,6 +554,7 @@ io.on('connection', (socket) => {
     catch (error) { const message = safeError(error); socket.emit('action:error', { event: 'room:join', message }); ack?.({ ok: false, error: message }); }
   });
   action('room:ready', socketSchemas.ready, ({ ready }, code) => rooms.setReady(user, code, ready));
+  action('room:set-color', z.object({ color: z.enum(['red', 'green', 'yellow', 'blue']) }), ({ color }, code) => rooms.setLudoColor(user, code, color));
   action('room:add-bot', z.object({}), (_data, code) => rooms.addBot(user, code));
   action('room:remove-bot', z.object({ botId: z.string().optional() }), ({ botId }, code) => rooms.removeBot(user, code, botId));
   action('room:switch-game', z.object({ game: z.enum(['uno', 'ludo', 'snake']).optional(), gameType: z.enum(['uno', 'ludo', 'snake']).optional() }), (data, code) => rooms.switchGame(user, code, (data.game || data.gameType || 'uno')));
@@ -565,6 +585,7 @@ io.on('connection', (socket) => {
     if (count <= 0) onlineUserIds.delete(user.id);
     else onlineUserIds.set(user.id, count);
     rooms.disconnect(socket);
+    broadcastServerStats();
   });
 });
 

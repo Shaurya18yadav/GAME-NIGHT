@@ -348,6 +348,59 @@ test('encryptSensitive and decryptSensitive correctly round-trips data', () => {
   assert.equal(decrypted, secretText);
 });
 
+test('RoomManager.getStats correctly aggregates active tables and players', () => {
+  const ioMock: any = { to: () => ({ emit: () => {} }), sockets: { adapter: { rooms: new Map() }, sockets: new Map() } };
+  const rm = new RoomManager(ioMock);
+  const u1: SessionUser = { id: 'u1', username: 'U1', isGuest: true };
+  
+  rm.createRoom(u1, { isPrivate: false, maxPlayers: 4, botCount: 2, autoStart: false, targetScore: 500, maxRounds: 5, rules: {} });
+  
+  const stats = rm.getStats();
+  assert.equal(stats.activeRooms, 1);
+  assert.equal(stats.publicRooms, 1);
+  assert.equal(stats.totalPlayersAtTables, 3); // u1 + 2 bots
+});
+
+test('RoomManager supports custom room code and rejects duplicates', () => {
+  const ioMock: any = { to: () => ({ emit: () => {} }), sockets: { adapter: { rooms: new Map() }, sockets: new Map() } };
+  const rm = new RoomManager(ioMock);
+  const u1: SessionUser = { id: 'u1', username: 'U1', isGuest: true };
+  const u2: SessionUser = { id: 'u2', username: 'U2', isGuest: true };
+
+  const room = rm.createRoom(u1, {
+    gameType: 'ludo',
+    isPrivate: true,
+    customCode: '1000',
+    maxPlayers: 4,
+    botCount: 0,
+    autoStart: false,
+    targetScore: 500,
+    maxRounds: 5,
+    rules: {}
+  });
+
+  assert.equal(room.code, '1000');
+  assert.equal(room.gameType, 'ludo');
+  assert.equal(room.players, 1); // Only u1, zero bots
+
+  // Duplicate custom code must throw
+  assert.throws(() => {
+    rm.createRoom(u2, {
+      gameType: 'ludo',
+      isPrivate: true,
+      customCode: '1000',
+      maxPlayers: 4,
+      botCount: 0,
+      autoStart: false,
+      targetScore: 500,
+      maxRounds: 5,
+      rules: {}
+    });
+  }, /already exists/);
+});
+
+
+
 
 
 

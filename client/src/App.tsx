@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { io, type Socket } from 'socket.io-client';
 import { api, getAuthJwt, getSessionToken } from './api';
-import type { Card, Color, Friend, GameSnapshot, MatchSummary, Profile, PublicProfile, RoomMeta, User } from './types';
+import type { Card, Color, Friend, GameSnapshot, MatchSummary, Profile, PublicProfile, RoomMeta, ServerStats, User } from './types';
 import { LudoGame } from './components/LudoGame';
 import { SnakesLaddersGame } from './components/SnakesLaddersGame';
 import { FeedbackSection } from './components/FeedbackSection';
@@ -440,7 +440,7 @@ export function InteractiveCardFan({ badgeText }: { badgeText?: string }) {
 }
 
 
-function MainHubLanding({ user, setUser, ensureGuest }: { user?: User; setUser: (user?: User) => void; ensureGuest: () => Promise<User> }) {
+function MainHubLanding({ user, setUser, ensureGuest, serverStats }: { user?: User; setUser: (user?: User) => void; ensureGuest: () => Promise<User>; serverStats?: ServerStats }) {
   const navigate = useNavigate();
   const [account, setAccount] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -617,10 +617,14 @@ function MainHubLanding({ user, setUser, ensureGuest }: { user?: User; setUser: 
             <span style={{ fontWeight: 'bold', color: '#2dd4bf' }}>⚡ SERVER NETWORK ONLINE</span>
             <span style={{ fontSize: '0.8rem', background: 'rgba(34,197,94,0.15)', color: '#4ade80', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>{ping} ms Latency</span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', textAlign: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '1rem', textAlign: 'center' }}>
             <div style={{ background: 'rgba(15,23,42,0.6)', padding: '0.8rem', borderRadius: '10px' }}>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff' }}>{lobbyRooms.length}</div>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Active Public Tables</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fde047' }}>{serverStats?.onlinePlayers ?? 1}</div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Active Players Online</div>
+            </div>
+            <div style={{ background: 'rgba(15,23,42,0.6)', padding: '0.8rem', borderRadius: '10px' }}>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff' }}>{serverStats?.activeTables ?? lobbyRooms.length}</div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Active Tables</div>
             </div>
             <div style={{ background: 'rgba(15,23,42,0.6)', padding: '0.8rem', borderRadius: '10px' }}>
               <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#38bdf8' }}>{leaderboardPlayers.length}</div>
@@ -906,7 +910,7 @@ function MainHubLanding({ user, setUser, ensureGuest }: { user?: User; setUser: 
   );
 }
 
-function Home({ user, setUser, ensureGuest }: { user?: User; setUser: (user?: User) => void; ensureGuest: () => Promise<User> }) {
+function Home({ user, setUser, ensureGuest, serverStats }: { user?: User; setUser: (user?: User) => void; ensureGuest: () => Promise<User>; serverStats?: ServerStats }) {
   const navigate = useNavigate();
   const [account, setAccount] = useState(false);
   const [how, setHow] = useState(false);
@@ -980,7 +984,7 @@ function Home({ user, setUser, ensureGuest }: { user?: User; setUser: (user?: Us
     }
   };
 
-  const totalPlayersOnline = lobbyRooms.reduce((acc, r) => acc + r.players, 0);
+  const totalPlayersOnline = serverStats?.onlinePlayers ?? Math.max(1, lobbyRooms.reduce((acc, r) => acc + r.players, 0));
 
   return (
     <div className="landing-v2-container">
@@ -1143,15 +1147,15 @@ function Home({ user, setUser, ensureGuest }: { user?: User; setUser: (user?: Us
           <div className="room-grid">
             <div className="quickstats">
               <div className="qstat">
-                <div className="big" style={{ color: 'var(--red)' }}>{lobbyRooms.length || 1}</div>
-                <div className="lbl2">active public tables</div>
+                <div className="big" style={{ color: 'var(--red)' }}>{serverStats?.activeTables ?? lobbyRooms.length}</div>
+                <div className="lbl2">active tables</div>
               </div>
               <div className="qstat">
-                <div className="big" style={{ color: 'var(--yellow)' }}>{totalPlayersOnline || 1}</div>
-                <div className="lbl2">players at the tables</div>
+                <div className="big" style={{ color: 'var(--yellow)' }}>{serverStats?.onlinePlayers ?? totalPlayersOnline}</div>
+                <div className="lbl2">active players online</div>
               </div>
               <div className="qstat">
-                <div className="big" style={{ color: 'var(--green)' }}>{leaderboardPlayers.length || 1}</div>
+                <div className="big" style={{ color: 'var(--green)' }}>{leaderboardPlayers.length}</div>
                 <div className="lbl2">ranked accounts active</div>
               </div>
               <div className="qstat">
@@ -1230,7 +1234,7 @@ function Home({ user, setUser, ensureGuest }: { user?: User; setUser: (user?: Us
   );
 }
 
-function Lobby({ ensureGuest }: { ensureGuest: () => Promise<User> }) {
+function Lobby({ ensureGuest, serverStats }: { ensureGuest: () => Promise<User>; serverStats?: ServerStats }) {
   const navigate = useNavigate();
   const [rooms, setRooms] = useState<RoomMeta[]>([]);
   const [error, setError] = useState('');
@@ -1292,12 +1296,12 @@ function Lobby({ ensureGuest }: { ensureGuest: () => Promise<User> }) {
 
       <div className="lobby-summary-bar panel">
         <div className="summary-stat">
-          <span>Active Public Tables</span>
-          <b>{rooms.length}</b>
+          <span>Active Tables</span>
+          <b>{serverStats?.activeTables ?? rooms.length}</b>
         </div>
         <div className="summary-stat">
           <span>Total Players Online</span>
-          <b>{rooms.reduce((acc, r) => acc + r.players, 0)}</b>
+          <b>{serverStats?.onlinePlayers ?? Math.max(1, rooms.reduce((acc, r) => acc + r.players, 0))}</b>
         </div>
         <div className="summary-stat">
           <span>Match Rules</span>
@@ -3072,6 +3076,7 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
   const [latency, setLatency] = useState<number>(0);
   const [inGameActive, setInGameActive] = useState(false);
+  const [serverStats, setServerStats] = useState<ServerStats>({ onlinePlayers: 1, playersAtTables: 0, activeTables: 0 });
 
   useEffect(() => {
     setInGameActive(false);
@@ -3144,6 +3149,23 @@ export default function App() {
       }
     });
 
+    client.on('server:stats', (stats: ServerStats) => {
+      if (stats && typeof stats.onlinePlayers === 'number') {
+        setServerStats((prev) => ({ ...prev, ...stats }));
+      }
+    });
+
+    api.lobby().then((res) => {
+      if (res.onlinePlayers) {
+        setServerStats((prev) => ({
+          ...prev,
+          onlinePlayers: res.onlinePlayers ?? prev.onlinePlayers,
+          playersAtTables: res.playersAtTables ?? prev.playersAtTables,
+          activeTables: res.activeTables ?? prev.activeTables
+        }));
+      }
+    }).catch(() => undefined);
+
     return () => {
       client.disconnect();
     };
@@ -3187,11 +3209,11 @@ export default function App() {
   return (
     <Shell user={user} setUser={setUser} connectionStatus={connectionStatus} latency={latency} inGameActive={inGameActive}>
       <Routes>
-        <Route path="/" element={<MainHubLanding user={user} setUser={setUser} ensureGuest={ensureGuest} />} />
-        <Route path="/uno" element={<Home user={user} setUser={setUser} ensureGuest={ensureGuest} />} />
-        <Route path="/ludo" element={<LudoGame user={user} ensureGuest={ensureGuest} socket={socket} onInGameChange={setInGameActive} />} />
-        <Route path="/snakes-ladders" element={<SnakesLaddersGame user={user} ensureGuest={ensureGuest} socket={socket} onInGameChange={setInGameActive} />} />
-        <Route path="/lobby" element={<Lobby ensureGuest={ensureGuest} />} />
+        <Route path="/" element={<MainHubLanding user={user} setUser={setUser} ensureGuest={ensureGuest} serverStats={serverStats} />} />
+        <Route path="/uno" element={<Home user={user} setUser={setUser} ensureGuest={ensureGuest} serverStats={serverStats} />} />
+        <Route path="/ludo" element={<LudoGame user={user} ensureGuest={ensureGuest} socket={socket} onInGameChange={setInGameActive} serverStats={serverStats} />} />
+        <Route path="/snakes-ladders" element={<SnakesLaddersGame user={user} ensureGuest={ensureGuest} socket={socket} onInGameChange={setInGameActive} serverStats={serverStats} />} />
+        <Route path="/lobby" element={<Lobby ensureGuest={ensureGuest} serverStats={serverStats} />} />
         <Route path="/leaderboard" element={<Leaderboard onInspectPlayer={(username) => setInspectUser(username)} />} />
         <Route path="/history" element={<History user={user} />} />
         <Route path="/profile" element={<ProfileView user={user} setUser={setUser} ensureGuest={ensureGuest} />} />

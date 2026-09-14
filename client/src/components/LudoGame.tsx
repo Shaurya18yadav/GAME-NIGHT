@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
-import type { RoomMeta, User } from '../types';
+import type { RoomMeta, ServerStats, User } from '../types';
 import { FeedbackSection } from './FeedbackSection';
 import { GameChatPanel, type ChatMessageItem } from './GameChatPanel';
 import { ReactionWheel } from './ReactionWheel';
@@ -232,12 +232,13 @@ export interface LudoGameProps {
   snapshot?: any;
   socket?: any;
   roomMeta?: RoomMeta;
+  serverStats?: ServerStats;
   onLeaveRoom?: () => void;
   onSendEmote?: (data: { emote?: string; phrase?: string; sfx?: string }) => void;
   onInGameChange?: (inGame: boolean) => void;
 }
 
-export function LudoGame({ user, ensureGuest, snapshot, socket, roomMeta, onLeaveRoom, onSendEmote, onInGameChange }: LudoGameProps) {
+export function LudoGame({ user, ensureGuest, snapshot, socket, roomMeta, serverStats, onLeaveRoom, onSendEmote, onInGameChange }: LudoGameProps) {
   const navigate = useNavigate();
 
   // Navigation & Flow State based on LUDO KINGDOM Architecture Diagram
@@ -400,6 +401,8 @@ export function LudoGame({ user, ensureGuest, snapshot, socket, roomMeta, onLeav
   const [roomCode4, setRoomCode4] = useState<string>('');
   const [joinInputCode, setJoinInputCode] = useState<string>('');
   const [codeError, setCodeError] = useState<string>('');
+  const [isCreatingRoom, setIsCreatingRoom] = useState<boolean>(false);
+  const [privateRoomError, setPrivateRoomError] = useState<string>('');
 
   // Waiting Room State
   const [slots, setSlots] = useState<PlayerSlot[]>([]);
@@ -543,14 +546,33 @@ export function LudoGame({ user, ensureGuest, snapshot, socket, roomMeta, onLeav
 
   const addLog = (msg: string) => setLog((prev) => [msg, ...prev.slice(0, 7)]);
 
-  // 1. Quick Match Handler (Launches Board Instantly)
-  const handleQuickMatch = (mode: 2 | 4, e?: React.MouseEvent) => {
+  // 1. Quick Match Handler (Connects to Live Public Room or Creates One)
+  const handleQuickMatch = async (mode: 2 | 4, e?: React.MouseEvent) => {
     e?.preventDefault();
-    void ensureGuest?.().catch(() => {});
-    setMatchType('quick');
-    setPlayerMode(mode);
-    const newSlots = setupSlots('quick', mode, userColor);
-    initBoardGame(newSlots);
+    try {
+      await ensureGuest?.();
+      const lobby = await api.lobby();
+      const openRoom = lobby.rooms?.find(
+        (r) => r.gameType === 'ludo' && !r.isPrivate && r.players < (r.maxPlayers || mode)
+      );
+      if (openRoom) {
+        navigate(`/room/${openRoom.code}`);
+        return;
+      }
+      const res = await api.createRoom({
+        gameType: 'ludo',
+        isPrivate: false,
+        maxPlayers: mode,
+        botCount: 0
+      });
+      navigate(`/room/${res.room.code}`);
+    } catch (err: any) {
+      console.error('Quick match fallback to local match:', err);
+      setMatchType('quick');
+      setPlayerMode(mode);
+      const newSlots = setupSlots('quick', mode, userColor);
+      initBoardGame(newSlots);
+    }
   };
 
   // 2. Create Private Room Handler
@@ -558,12 +580,41 @@ export function LudoGame({ user, ensureGuest, snapshot, socket, roomMeta, onLeav
     e?.preventDefault();
     void ensureGuest?.().catch(() => {});
     setMatchType('private');
-    const generatedCode = Math.floor(1000 + Math.random() * 9000).toString();
-    setRoomCode4(generatedCode);
+    if (!roomCode4) {
+      setRoomCode4(Math.floor(1000 + Math.random() * 9000).toString());
+    }
+    setPrivateRoomError('');
     setView('private_lobby');
   };
 
-  // 3. Play vs Bot (Offline) Handler
+  // 3. Create Real Authoritative Room on Server with Custom Code & Zero Initial Bots
+  const handleProceedCreateRealRoom = async (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault();
+    const cleanCode = roomCode4.trim().toUpperCase();
+    if (cleanCode && (cleanCode.length < 4 || cleanCode.length > 6 || !/^[A-Z0-9]{4,6}$/.test(cleanCode))) {
+      setPrivateRoomError('Room code must be 4 to 6 alphanumeric characters (A-Z, 0-9).');
+      return;
+    }
+    try {
+      setIsCreatingRoom(true);
+      setPrivateRoomError('');
+      await ensureGuest?.();
+      const res = await api.createRoom({
+        gameType: 'ludo',
+        isPrivate: true,
+        customCode: cleanCode || undefined,
+        maxPlayers: 4,
+        botCount: 0 // Zero bots! Real players will join this room.
+      });
+      navigate(`/room/${res.room.code}`);
+    } catch (err: any) {
+      setPrivateRoomError(err?.message || 'Failed to create room with this code.');
+    } finally {
+      setIsCreatingRoom(false);
+    }
+  };
+
+  // 4. Play vs Bot (Offline Practice Mode)
   const handlePlayVsBot = (e?: React.MouseEvent) => {
     e?.preventDefault();
     void ensureGuest?.().catch(() => {});
@@ -573,18 +624,20 @@ export function LudoGame({ user, ensureGuest, snapshot, socket, roomMeta, onLeav
     initBoardGame(newSlots);
   };
 
-  // 4. Validate and Join Room with 4-digit code
-  const handleValidateJoinCode = (e?: React.MouseEvent) => {
+  // 5. Validate and Join Real Room with 4-6 char code
+  const handleValidateJoinCode = async (e?: React.MouseEvent) => {
     e?.preventDefault();
-    if (joinInputCode.length !== 4) {
-      setCodeError('Please enter a valid 4-digit code');
+    const cleanCode = joinInputCode.trim().toUpperCase();
+    if (cleanCode.length < 4 || cleanCode.length > 6 || !/^[A-Z0-9]{4,6}$/.test(cleanCode)) {
+      setCodeError('Please enter a valid 4 to 6 character room code (e.g. LUDO1, 4829)');
       return;
     }
-    void ensureGuest?.().catch(() => {});
-    setRoomCode4(joinInputCode);
-    setMatchType('private');
-    const newSlots = setupSlots('private', 4, 'yellow');
-    initBoardGame(newSlots);
+    try {
+      await ensureGuest?.();
+      navigate(`/room/${cleanCode}`);
+    } catch (err: any) {
+      setCodeError(err?.message || 'Failed to join room.');
+    }
   };
 
   // Setup Player Slots for Waiting Room
@@ -932,25 +985,25 @@ export function LudoGame({ user, ensureGuest, snapshot, socket, roomMeta, onLeav
               </button>
             </div>
 
-            {/* 4-DIGIT ROOM CODE JOIN BAR */}
+            {/* ROOM CODE JOIN BAR */}
             <div className="room-code-row" style={{ marginTop: '1.2rem' }}>
               <input
                 type="text"
                 className="room-code-input mono"
                 value={joinInputCode}
                 onChange={(e) => {
-                  setJoinInputCode(e.target.value.replace(/\D/g, '').slice(0, 4));
+                  setJoinInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6));
                   setCodeError('');
                 }}
-                placeholder="4-DIGIT CODE"
-                maxLength={4}
+                placeholder="ROOM CODE (4-6 CHARS)"
+                maxLength={6}
                 autoComplete="off"
-                aria-label="4-Digit Room Code"
+                aria-label="Room Code"
               />
               <button
                 type="button"
                 className="btn btn-secondary"
-                disabled={joinInputCode.length !== 4}
+                disabled={joinInputCode.length < 4}
                 onClick={handleValidateJoinCode}
               >
                 Join Room
@@ -1048,15 +1101,15 @@ export function LudoGame({ user, ensureGuest, snapshot, socket, roomMeta, onLeav
             <div className="room-grid">
               <div className="quickstats">
                 <div className="qstat">
-                  <div className="big" style={{ color: 'var(--red)' }}>{lobbyRooms.length || 1}</div>
-                  <div className="lbl2">active public tables</div>
+                  <div className="big" style={{ color: 'var(--red)' }}>{serverStats?.activeTables ?? lobbyRooms.length}</div>
+                  <div className="lbl2">active tables</div>
                 </div>
                 <div className="qstat">
-                  <div className="big" style={{ color: 'var(--yellow)' }}>{(lobbyRooms.length * 2) || 4}</div>
-                  <div className="lbl2">players at the tables</div>
+                  <div className="big" style={{ color: 'var(--yellow)' }}>{serverStats?.onlinePlayers ?? Math.max(1, lobbyRooms.reduce((a, r) => a + r.players, 0))}</div>
+                  <div className="lbl2">active players online</div>
                 </div>
                 <div className="qstat">
-                  <div className="big" style={{ color: 'var(--green)' }}>{leaderboardPlayers.length || 1}</div>
+                  <div className="big" style={{ color: 'var(--green)' }}>{leaderboardPlayers.length}</div>
                   <div className="lbl2">ranked accounts active</div>
                 </div>
                 <div className="qstat">
@@ -1173,31 +1226,80 @@ export function LudoGame({ user, ensureGuest, snapshot, socket, roomMeta, onLeav
   if (view === 'private_lobby') {
     return (
       <div className="landing-v2-container" style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ background: 'rgba(15,23,42,0.95)', border: '1px solid #2dd4bf', borderRadius: '1.5rem', padding: '2rem', maxWidth: '520px', width: '100%' }}>
-          <h2 style={{ fontFamily: 'Fredoka, sans-serif', color: '#2dd4bf', textAlign: 'center', marginTop: 0 }}>🔒 Private Ludo Lobby</h2>
+        <div style={{ background: 'rgba(15,23,42,0.95)', border: '1px solid #2dd4bf', borderRadius: '1.5rem', padding: '2rem', maxWidth: '520px', width: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.6)' }}>
+          <h2 style={{ fontFamily: 'Fredoka, sans-serif', color: '#2dd4bf', textAlign: 'center', marginTop: 0 }}>🔒 Private Ludo Lobby Setup</h2>
 
-          {/* 4-DIGIT ROOM CODE BADGE */}
-          <div style={{ background: 'rgba(45,212,191,0.12)', border: '1px dashed #2dd4bf', borderRadius: '12px', padding: '1rem', textAlign: 'center', margin: '1rem 0' }}>
-            <span style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block' }}>YOUR 4-DIGIT ROOM CODE:</span>
-            <strong style={{ fontSize: '2.5rem', color: '#fbbf24', letterSpacing: '6px', fontFamily: 'Space Mono, monospace' }}>{roomCode4}</strong>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+          {privateRoomError && (
+            <div style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5', padding: '0.6rem 0.8rem', borderRadius: '8px', fontSize: '0.85rem', marginBottom: '1rem', textAlign: 'center' }}>
+              {privateRoomError}
+            </div>
+          )}
+
+          {/* CUSTOM ROOM CODE BOX */}
+          <div style={{ background: 'rgba(45,212,191,0.12)', border: '1px dashed #2dd4bf', borderRadius: '12px', padding: '1.2rem', textAlign: 'center', margin: '1rem 0' }}>
+            <span style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '0.4rem', fontWeight: 'bold' }}>
+              CUSTOM ROOM CODE (4-6 CHARS):
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+              <input
+                type="text"
+                value={roomCode4}
+                onChange={(e) => {
+                  setRoomCode4(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6));
+                  setPrivateRoomError('');
+                }}
+                placeholder="e.g. LUDO1"
+                maxLength={6}
+                style={{
+                  background: 'rgba(15,23,42,0.9)',
+                  border: '2px solid #fbbf24',
+                  borderRadius: '10px',
+                  color: '#fbbf24',
+                  fontSize: '2rem',
+                  fontFamily: 'Space Mono, monospace',
+                  fontWeight: 'bold',
+                  letterSpacing: '4px',
+                  textAlign: 'center',
+                  padding: '0.3rem 0.6rem',
+                  width: '200px',
+                  outline: 'none'
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setRoomCode4(Math.floor(1000 + Math.random() * 9000).toString());
+                  setPrivateRoomError('');
+                }}
+                title="Generate Random Code"
+                style={{ padding: '0.6rem 0.9rem', fontSize: '1.1rem' }}
+              >
+                🎲
+              </button>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '0.8rem' }}>
               <button
                 type="button"
                 className="btn btn-primary"
                 onClick={() => {
-                  navigator.clipboard.writeText(`${window.location.origin}/join/${roomCode4.toUpperCase()}`);
+                  if (roomCode4.trim()) {
+                    navigator.clipboard.writeText(`${window.location.origin}/join/${roomCode4.trim().toUpperCase()}`);
+                  }
                 }}
                 style={{ padding: '0.4rem 0.9rem', fontSize: '0.8rem' }}
               >
                 📋 Copy Invite Link
               </button>
             </div>
-            <p style={{ fontSize: '0.8rem', color: '#cbd5e1', margin: '0.4rem 0 0 0' }}>Share this direct invite link or 4-digit code with friends!</p>
+            <p style={{ fontSize: '0.8rem', color: '#cbd5e1', margin: '0.5rem 0 0 0' }}>
+              Friends join via this code or direct link. Real players will occupy the seats (0 bots added by default).
+            </p>
           </div>
 
           {/* COLOR SELECTION */}
           <div style={{ margin: '1.2rem 0' }}>
-            <label style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Select Your Color:</label>
+            <label style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Select Your Preferred Pawn Color:</label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
               {(['red', 'green', 'yellow', 'blue'] as const).map((col) => (
                 <button
@@ -1219,30 +1321,17 @@ export function LudoGame({ user, ensureGuest, snapshot, socket, roomMeta, onLeav
             </div>
           </div>
 
-          {/* TOKEN COUNT SELECTION */}
-          <div style={{ margin: '1.2rem 0' }}>
-            <label style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 'bold', display: 'block', marginBottom: '0.5rem' }}>Tokens Per Player:</label>
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <button
-                onClick={() => setTokenCount(2)}
-                className={`btn ${tokenCount === 2 ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ flex: 1 }}
-              >
-                2 Tokens (Speed)
-              </button>
-              <button
-                onClick={() => setTokenCount(4)}
-                className={`btn ${tokenCount === 4 ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ flex: 1 }}
-              >
-                4 Tokens (Classic)
-              </button>
-            </div>
-          </div>
-
           <div style={{ display: 'flex', gap: '0.8rem', marginTop: '1.5rem' }}>
             <button onClick={() => setView('home')} className="btn btn-secondary" style={{ flex: 1 }}>Back</button>
-            <button onClick={() => { setupSlots('private', 4, userColor); setView('waiting_room'); }} className="btn btn-primary" style={{ flex: 2 }}>Proceed to Waiting Room →</button>
+            <button
+              type="button"
+              onClick={handleProceedCreateRealRoom}
+              disabled={isCreatingRoom || roomCode4.trim().length < 4}
+              className="btn btn-primary"
+              style={{ flex: 2 }}
+            >
+              {isCreatingRoom ? '⏳ Creating Room...' : 'Create Room & Enter Lobby →'}
+            </button>
           </div>
         </div>
       </div>

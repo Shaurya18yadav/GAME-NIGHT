@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
-import type { RoomMeta, User } from '../types';
+import type { RoomMeta, ServerStats, User } from '../types';
 import { FeedbackSection } from './FeedbackSection';
 import { GameChatPanel, type ChatMessageItem } from './GameChatPanel';
 import { ReactionWheel } from './ReactionWheel';
@@ -184,6 +184,7 @@ export interface SnakesLaddersGameProps {
   snapshot?: any;
   socket?: any;
   roomMeta?: RoomMeta;
+  serverStats?: ServerStats;
   onLeaveRoom?: () => void;
   onSendEmote?: (data: { emote?: string; phrase?: string; sfx?: string }) => void;
   onInGameChange?: (inGame: boolean) => void;
@@ -195,6 +196,7 @@ export function SnakesLaddersGame({
   snapshot,
   socket,
   roomMeta,
+  serverStats,
   onLeaveRoom,
   onSendEmote,
   onInGameChange
@@ -634,15 +636,15 @@ export function SnakesLaddersGame({
             <div className="room-grid">
               <div className="quickstats">
                 <div className="qstat">
-                  <div className="big" style={{ color: 'var(--green)' }}>{lobbyRooms.length || 1}</div>
-                  <div className="lbl2">active public tables</div>
+                  <div className="big" style={{ color: 'var(--green)' }}>{serverStats?.activeTables ?? lobbyRooms.length}</div>
+                  <div className="lbl2">active tables</div>
                 </div>
                 <div className="qstat">
-                  <div className="big" style={{ color: 'var(--yellow)' }}>{(lobbyRooms.length * 2) || 4}</div>
-                  <div className="lbl2">players in arcade</div>
+                  <div className="big" style={{ color: 'var(--yellow)' }}>{serverStats?.onlinePlayers ?? Math.max(1, lobbyRooms.reduce((a, r) => a + r.players, 0))}</div>
+                  <div className="lbl2">active players in arcade</div>
                 </div>
                 <div className="qstat">
-                  <div className="big" style={{ color: 'var(--purple)' }}>{leaderboardPlayers.length || 1}</div>
+                  <div className="big" style={{ color: 'var(--purple)' }}>{leaderboardPlayers.length}</div>
                   <div className="lbl2">ranked accounts active</div>
                 </div>
                 <div className="qstat">

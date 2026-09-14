@@ -32,4 +32,8 @@ export type GameSnapshot = {
   ludoState?: LudoState;
 };
 
-
+export type ServerStats = {
+  onlinePlayers: number;
+  playersAtTables?: number;
+  activeTables?: number;
+};

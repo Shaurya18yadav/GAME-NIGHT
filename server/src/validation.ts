@@ -8,14 +8,15 @@ export const roomOptionsSchema = z.object({
   autoStart: z.boolean().default(false),
   targetScore: z.number().int().min(50).max(1000).default(500),
   maxRounds: z.number().int().min(1).max(20).default(5),
-  rules: z.object({ stacking: z.boolean().optional(), sevenZero: z.boolean().optional(), jumpIn: z.boolean().optional() }).default({})
+  rules: z.object({ stacking: z.boolean().optional(), sevenZero: z.boolean().optional(), jumpIn: z.boolean().optional() }).default({}),
+  customCode: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{4,6}$/).optional()
 }).refine((options) => options.botCount <= options.maxPlayers - 1, { message: 'Leave at least one seat for the host.', path: ['botCount'] })
   .refine((options) => !options.autoStart || options.botCount > 0, { message: 'Quick start is only available for bot matches.', path: ['autoStart'] });
 export const guestSchema = z.object({ username: z.string().max(24).optional(), avatarPreset: z.string().max(32).optional(), sessionToken: z.string().max(128).optional() });
 export const signupSchema = z.object({ username: z.string().min(1).max(24), email: z.string().email().max(254), password: z.string().min(10).max(72), avatarUrl: z.string().url().max(500).refine((value) => { try { return new URL(value).protocol === 'https:'; } catch { return false; } }, 'Avatar URL must use HTTPS.').optional(), avatarPreset: z.string().max(32).optional() });
 export const loginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(72) });
-export const reportSchema = z.object({ category: z.enum(['bug', 'abuse', 'cheating', 'other']), details: z.string().min(1).max(2000), roomCode: z.string().regex(/^[A-Z2-9]{6}$/).optional() });
-export const codeSchema = z.string().trim().toUpperCase().regex(/^[A-Z2-9]{4,6}$/);
+export const reportSchema = z.object({ category: z.enum(['bug', 'abuse', 'cheating', 'other']), details: z.string().min(1).max(2000), roomCode: z.string().regex(/^[A-Z0-9]{4,6}$/).optional() });
+export const codeSchema = z.string().trim().toUpperCase().regex(/^[A-Z0-9]{4,6}$/);
 
 export const updateProfileSchema = z.object({
   username: z.string().min(1).max(24),

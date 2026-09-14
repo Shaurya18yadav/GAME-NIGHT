@@ -78,7 +78,7 @@ function pickBestLudoToken(list: { id: string; pos: number }[], toks: Record<Col
   return [...list].sort((a, b) => b.pos - a.pos)[0];
 }
 
-type RoomOptions = { gameType?: 'uno' | 'ludo' | 'snake'; isPrivate: boolean; maxPlayers: number; botCount: number; autoStart: boolean; targetScore: number; maxRounds: number; rules: Partial<HouseRules> };
+type RoomOptions = { gameType?: 'uno' | 'ludo' | 'snake'; isPrivate: boolean; maxPlayers: number; botCount: number; autoStart: boolean; targetScore: number; maxRounds: number; rules: Partial<HouseRules>; customCode?: string };
 type Room = {
   code: string;
   gameType: 'uno' | 'ludo' | 'snake';
@@ -108,8 +108,16 @@ export class RoomManager {
   constructor(private io: Server, private db: Repository = repository) {}
 
   createRoom(creator: SessionUser, options: RoomOptions) {
-    let code = makeCode();
-    while (this.rooms.has(code)) code = makeCode();
+    let code: string;
+    if (options.customCode) {
+      code = options.customCode.trim().toUpperCase();
+      if (this.rooms.has(code)) {
+        throw new GameRuleError(`A room with code "${code}" already exists. Please choose a different code or join it.`);
+      }
+    } else {
+      code = makeCode();
+      while (this.rooms.has(code)) code = makeCode();
+    }
     const gType = options.gameType ?? 'uno';
     const maxP = gType === 'ludo' ? Math.min(options.maxPlayers, 4) : options.maxPlayers;
     const game = new UnoGame(code, { targetScore: options.targetScore, maxRounds: options.maxRounds, rules: options.rules });
@@ -902,6 +910,23 @@ export class RoomManager {
     }
     return [...this.rooms.values()].filter((room) => !room.isPrivate && room.game.state.status === 'waiting').map((room) => this.roomInfo(room));
   }
+
+  getStats() {
+    let totalPlayersAtTables = 0;
+    let activeRooms = 0;
+    for (const room of this.rooms.values()) {
+      if (room.game.state.status !== 'match-over') {
+        activeRooms++;
+        totalPlayersAtTables += room.game.state.players.length;
+      }
+    }
+    return {
+      activeRooms,
+      totalPlayersAtTables,
+      publicRooms: [...this.rooms.values()].filter((room) => !room.isPrivate && room.game.state.status === 'waiting').length
+    };
+  }
+
   roomInfo(room: Room) { return { code: room.code, gameType: room.gameType, isPrivate: room.isPrivate, players: room.game.state.players.length, bots: room.game.state.players.filter((player) => player.isBot).length, maxPlayers: room.maxPlayers, status: room.game.state.status, hostId: room.hostId, host: room.game.state.players.find((player) => player.id === room.hostId)?.username, rules: room.game.state.rules, createdAt: room.createdAt }; }
 
   private afterGameAction(room: Room): void {

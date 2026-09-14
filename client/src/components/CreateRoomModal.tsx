@@ -15,6 +15,7 @@ export function CreateRoomModal({ onClose, onRoomCreated, initialGameType = 'uno
   const [botCount, setBotCount] = useState(0);
   const [rules, setRules] = useState({ stacking: true, sevenZero: false, jumpIn: false });
   const [targetScore, setTargetScore] = useState(500);
+  const [customCode, setCustomCode] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -36,6 +37,13 @@ export function CreateRoomModal({ onClose, onRoomCreated, initialGameType = 'uno
     setIsCreating(true);
     setErrorMsg('');
 
+    const cleanCustomCode = customCode.trim().toUpperCase();
+    if (cleanCustomCode && (cleanCustomCode.length < 4 || cleanCustomCode.length > 6 || !/^[A-Z0-9]{4,6}$/.test(cleanCustomCode))) {
+      setErrorMsg('Custom room code must be 4 to 6 letters or numbers (A-Z, 0-9).');
+      setIsCreating(false);
+      return;
+    }
+
     try {
       const res = await api.createRoom({
         gameType,
@@ -44,7 +52,8 @@ export function CreateRoomModal({ onClose, onRoomCreated, initialGameType = 'uno
         botCount,
         targetScore,
         maxRounds: 5,
-        rules
+        rules,
+        customCode: cleanCustomCode || undefined
       });
       onRoomCreated(res.room, res.inviteUrl);
     } catch (err: any) {
@@ -150,6 +159,33 @@ export function CreateRoomModal({ onClose, onRoomCreated, initialGameType = 'uno
                 {[0, 1, 2, 3].filter((b) => b < maxPlayers).map((b) => <option key={b} value={b}>{b} AI Bot{b !== 1 ? 's' : ''}</option>)}
               </select>
             </div>
+          </div>
+
+          {/* CUSTOM ROOM CODE (OPTIONAL) */}
+          <div>
+            <label style={{ display: 'block', fontSize: '0.82rem', color: '#cbd5e1', fontWeight: 'bold', marginBottom: '0.4rem' }}>
+              Custom Room Code (Optional, 4-6 chars):
+            </label>
+            <input
+              type="text"
+              value={customCode}
+              onChange={(e) => setCustomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
+              placeholder="e.g. LUDO1, 4829 (leave blank for random)"
+              maxLength={6}
+              style={{
+                width: '100%',
+                background: 'rgba(15,23,42,0.8)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                color: '#fbbf24',
+                padding: '0.6rem',
+                borderRadius: '8px',
+                fontSize: '0.95rem',
+                fontWeight: 'bold',
+                letterSpacing: '2px',
+                outline: 'none',
+                fontFamily: 'Space Mono, monospace'
+              }}
+            />
           </div>
 
           {/* STEP 3: GAME SPECIFIC RULE CONFIG */}
